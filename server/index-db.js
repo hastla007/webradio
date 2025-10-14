@@ -10,6 +10,9 @@ const {
     clearPlayerFromOtherProfiles
 } = require('./db_operations');
 
+const { checkStreamHealth } = require('./monitor');
+const { logger, getRecentLogEntries, subscribeToLogEntries } = require('./logger');
+
 const PORT = Number(process.env.PORT || 4000);
 const API_PREFIX = process.env.API_PREFIX || '/api';
 
@@ -20,6 +23,121 @@ app.use(express.json());
 // Health check
 app.get(`${API_PREFIX}/health`, (req, res) => {
     res.json({ status: 'ok', storage: 'postgresql' });
+});
+
+// Monitoring endpoint
+app.post(`${API_PREFIX}/monitor/check`, async (req, res) => {
+    const payload = req.body || {};
+    const streams = Array.isArray(payload.streams) ? payload.streams : [];
+    
+    if (streams.length === 0) {
+        return res.status(400).json({ error: 'streams must be a non-empty array' });
+    }
+
+    const timeoutCandidate = Number(payload.timeoutMs);
+    const timeoutMs = Number.isFinite(timeoutCandidate) ? timeoutCandidate : undefined;
+
+    try {
+        const results = await Promise.all(
+            streams.map(async entry => {
+                const stationId = typeof entry.stationId === 'string' ? entry.stationId : String(entry.stationId ?? '').trim();
+                const streamUrl = typeof entry.streamUrl === 'string' ? entry.streamUrl : '';
+
+                if (!stationId) {
+                    return { stationId: '', isOnline: false, error: 'stationId is required' };
+                }
+
+                if (!streamUrl.trim()) {
+                    return { stationId, isOnline: false, error: 'streamUrl is required' };
+                }
+
+                const health = await checkStreamHealth(streamUrl, { timeoutMs });
+                return { stationId, ...health };
+            })
+        );
+
+        res.json(results);
+        logger.info(
+            {
+                category: 'monitoring',
+                eventType: 'monitor.check',
+                stationCount: streams.length,
+                offlineCount: results.filter(result => !result.isOnline).length,
+            },
+            'Completed stream health check request.'
+        );
+    } catch (error) {
+        logger.error(
+            { err: error, category: 'errors', eventType: 'monitor.check' },
+            'Failed to perform stream health check'
+        );
+        res.status(500).json({ error: 'Failed to perform stream health check.' });
+    }
+});
+
+// Logs endpoint
+app.get(`${API_PREFIX}/logs`, (req, res) => {
+    const categories = req.query.type || req.query.category || req.query.categories;
+    const parsedCategories = categories ? String(categories).split(',').map(c => c.trim()).filter(Boolean) : [];
+    const limit = Number(req.query.limit) || 200;
+    const cursor = Number(req.query.cursor);
+
+    const entries = getRecentLogEntries({ 
+        categories: parsedCategories.length > 0 ? parsedCategories : undefined, 
+        limit, 
+        after: Number.isFinite(cursor) ? cursor : undefined 
+    });
+    const nextCursor = entries.length > 0 ? entries[entries.length - 1].sequence : cursor ?? null;
+
+    res.json({ entries, cursor: nextCursor });
+});
+
+// Logs stream endpoint
+app.get(`${API_PREFIX}/logs/stream`, (req, res) => {
+    const categories = req.query.type || req.query.category || req.query.categories;
+    const parsedCategories = categories ? String(categories).split(',').map(c => c.trim()).filter(Boolean) : [];
+    const limit = Number(req.query.limit) || 50;
+    const cursor = Number(req.query.cursor);
+    const allowed = parsedCategories.length > 0 ? new Set(parsedCategories) : null;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    if (typeof res.flushHeaders === 'function') {
+        res.flushHeaders();
+    }
+    res.write('retry: 5000\n\n');
+
+    const initial = getRecentLogEntries({ 
+        categories: parsedCategories.length > 0 ? parsedCategories : undefined, 
+        limit, 
+        after: Number.isFinite(cursor) ? cursor : undefined 
+    });
+    
+    for (const entry of initial) {
+        res.write(`id: ${entry.sequence}\n`);
+        res.write('event: log\n');
+        res.write(`data: ${JSON.stringify(entry)}\n\n`);
+    }
+
+    const listener = entry => {
+        if (allowed && !allowed.has(entry.category)) {
+            return;
+        }
+        res.write(`id: ${entry.sequence}\n`);
+        res.write('event: log\n');
+        res.write(`data: ${JSON.stringify(entry)}\n\n`);
+    };
+
+    const unsubscribe = subscribeToLogEntries(listener);
+    const heartbeat = setInterval(() => {
+        res.write(':keep-alive\n\n');
+    }, 15000);
+
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+    });
 });
 
 // Genres
