@@ -23,9 +23,7 @@ services:
       - webradio-network
 
   backend:
-    build:
-      context: .
-      dockerfile: server/Dockerfile
+    image: nowdoo/webradio-backend:latest
     container_name: webradio-backend
     environment:
       NODE_ENV: production
@@ -56,11 +54,7 @@ services:
       - webradio-network
 
   frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        VITE_API_BASE_URL: /api
+    image: nowdoo/webradio-frontend:latest
     container_name: webradio-frontend
     environment:
       VITE_API_BASE_URL: /api
