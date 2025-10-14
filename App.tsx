@@ -72,6 +72,7 @@ const App: React.FC = () => {
     const [monitoringEvents, setMonitoringEvents] = useState<MonitoringEvent[]>([]);
     const [isOfflineMode, setIsOfflineMode] = useState<boolean>(isApiOffline());
     const lastMonitorErrorRef = useRef<string | null>(null);
+    const monitorCancelledRef = useRef<boolean>(false);
 
     const loadData = useCallback(async () => {
         try {
@@ -305,7 +306,7 @@ const App: React.FC = () => {
         const confirmed = await confirm({
             title: 'Delete export profile',
             description: profile
-                ? `Delete the export profile “${profile.name}”? Any linked automation will stop running.`
+                ? `Delete the export profile "${profile.name}"? Any linked automation will stop running.`
                 : 'Delete this export profile? Any linked automation will stop running.',
             confirmLabel: 'Delete profile',
             cancelLabel: 'Keep profile',
@@ -355,7 +356,7 @@ const App: React.FC = () => {
         const confirmed = await confirm({
             title: 'Delete player',
             description: app
-                ? `Delete the player “${app.name}”? Linked profiles will lose their assignments.`
+                ? `Delete the player "${app.name}"? Linked profiles will lose their assignments.`
                 : 'Delete this player? Linked profiles will lose their assignments.',
             confirmLabel: 'Delete player',
             cancelLabel: 'Keep player',
@@ -380,6 +381,125 @@ const App: React.FC = () => {
     };
 
     // Monitoring checks
+    const runMonitoringCheck = useCallback(async () => {
+        const activeStations = stations.filter(station => station.isActive && station.streamUrl);
+
+        if (activeStations.length === 0) {
+            setMonitoringStatus(prevStatus => {
+                const nextStatus: Record<string, MonitoringStatus> = {};
+                stations.forEach(station => {
+                    const previous = prevStatus[station.id] || { status: 'unknown', history: [], fails: 0 };
+                    nextStatus[station.id] = {
+                        ...previous,
+                        status: 'unknown',
+                        fails: 0,
+                        responseTime: undefined,
+                        statusCode: undefined,
+                        contentType: undefined,
+                        error: undefined,
+                    };
+                });
+                return nextStatus;
+            });
+            return;
+        }
+
+        try {
+            const results = await checkStreamsHealth(
+                activeStations.map(station => ({ stationId: station.id, streamUrl: station.streamUrl }))
+            );
+
+            if (monitorCancelledRef.current) {
+                return;
+            }
+
+            lastMonitorErrorRef.current = null;
+            const timestamp = Date.now();
+            const resultMap = new Map(results.map(result => [result.stationId, result] as const));
+            const generatedEvents: MonitoringEvent[] = [];
+
+            setMonitoringStatus(prevStatus => {
+                const nextStatus: Record<string, MonitoringStatus> = {};
+
+                stations.forEach(station => {
+                    const previous = prevStatus[station.id] || { status: 'unknown', history: [], fails: 0 };
+
+                    if (!station.isActive || !station.streamUrl) {
+                        nextStatus[station.id] = {
+                            ...previous,
+                            status: 'unknown',
+                            fails: 0,
+                            responseTime: undefined,
+                            statusCode: undefined,
+                            contentType: undefined,
+                            error: undefined,
+                        };
+                        return;
+                    }
+
+                    const result = resultMap.get(station.id);
+                    const isOnline = result?.isOnline === true;
+                    const historyValue = isOnline ? 1 : 0;
+                    const history = [historyValue, ...previous.history].slice(0, 100);
+                    const fails = isOnline ? 0 : previous.fails + 1;
+                    const status: MonitoringStatus['status'] = isOnline ? 'online' : 'offline';
+                    const errorMessage = result?.error ?? (!result ? 'No monitoring data available.' : undefined);
+
+                    nextStatus[station.id] = {
+                        status,
+                        history,
+                        fails,
+                        responseTime: result?.responseTime,
+                        statusCode: result?.statusCode,
+                        contentType: result?.contentType,
+                        lastCheckedAt: timestamp,
+                        error: errorMessage,
+                    };
+
+                    if (previous.status !== 'unknown' && previous.status !== status) {
+                        generatedEvents.push({
+                            id: `status-${timestamp}-${station.id}`,
+                            stationName: station.name,
+                            message:
+                                status === 'online'
+                                    ? `Stream is back online (${describeOnlineResult(result)})`
+                                    : describeOfflineResult(result),
+                            timestamp,
+                            type: status === 'online' ? 'success' : 'error',
+                        });
+                    }
+
+                    if (!isOnline && monitoringSettings.threshold > 0 && fails === monitoringSettings.threshold) {
+                        generatedEvents.push({
+                            id: `threshold-${timestamp}-${station.id}`,
+                            stationName: station.name,
+                            message: `Stream failed ${fails} checks in a row.`,
+                            timestamp,
+                            type: 'error',
+                        });
+                    }
+                });
+
+                return nextStatus;
+            });
+
+            if (generatedEvents.length > 0) {
+                setMonitoringEvents(prev => [...generatedEvents, ...prev].slice(0, 100));
+            }
+        } catch (error) {
+            if (monitorCancelledRef.current) {
+                return;
+            }
+            console.error('Failed to check stream health', error);
+            const message = error instanceof Error ? error.message : 'Failed to check stream health.';
+            if (lastMonitorErrorRef.current !== message) {
+                addToast(message, { type: 'error' });
+                lastMonitorErrorRef.current = message;
+                markToastHandled(error);
+            }
+        }
+    }, [stations, monitoringSettings, addToast]);
+
     useEffect(() => {
         if (!monitoringSettings.enabled) {
             setMonitoringStatus(prevStatus => {
@@ -401,146 +521,19 @@ const App: React.FC = () => {
             return;
         }
 
-        let cancelled = false;
-
-        const runCheck = async () => {
-            const activeStations = stations.filter(station => station.isActive && station.streamUrl);
-
-            if (activeStations.length === 0) {
-                setMonitoringStatus(prevStatus => {
-                    const nextStatus: Record<string, MonitoringStatus> = {};
-                    stations.forEach(station => {
-                        const previous = prevStatus[station.id] || { status: 'unknown', history: [], fails: 0 };
-                        nextStatus[station.id] = {
-                            ...previous,
-                            status: 'unknown',
-                            fails: 0,
-                            responseTime: undefined,
-                            statusCode: undefined,
-                            contentType: undefined,
-                            error: undefined,
-                        };
-                    });
-                    return nextStatus;
-                });
-                return;
-            }
-
-            try {
-                const results = await checkStreamsHealth(
-                    activeStations.map(station => ({ stationId: station.id, streamUrl: station.streamUrl }))
-                );
-
-                if (cancelled) {
-                    return;
-                }
-
-                lastMonitorErrorRef.current = null;
-                const timestamp = Date.now();
-                const resultMap = new Map(results.map(result => [result.stationId, result] as const));
-                const generatedEvents: MonitoringEvent[] = [];
-
-                setMonitoringStatus(prevStatus => {
-                    const nextStatus: Record<string, MonitoringStatus> = {};
-
-                    stations.forEach(station => {
-                        const previous = prevStatus[station.id] || { status: 'unknown', history: [], fails: 0 };
-
-                        if (!station.isActive || !station.streamUrl) {
-                            nextStatus[station.id] = {
-                                ...previous,
-                                status: 'unknown',
-                                fails: 0,
-                                responseTime: undefined,
-                                statusCode: undefined,
-                                contentType: undefined,
-                                error: undefined,
-                            };
-                            return;
-                        }
-
-                        const result = resultMap.get(station.id);
-                        const isOnline = result?.isOnline === true;
-                        const historyValue = isOnline ? 1 : 0;
-                        const history = [historyValue, ...previous.history].slice(0, 100);
-                        const fails = isOnline ? 0 : previous.fails + 1;
-                        const status: MonitoringStatus['status'] = isOnline ? 'online' : 'offline';
-                        const errorMessage = result?.error ?? (!result ? 'No monitoring data available.' : undefined);
-
-                        nextStatus[station.id] = {
-                            status,
-                            history,
-                            fails,
-                            responseTime: result?.responseTime,
-                            statusCode: result?.statusCode,
-                            contentType: result?.contentType,
-                            lastCheckedAt: timestamp,
-                            error: errorMessage,
-                        };
-
-                        if (previous.status !== 'unknown' && previous.status !== status) {
-                            generatedEvents.push({
-                                id: `status-${timestamp}-${station.id}`,
-                                stationName: station.name,
-                                message:
-                                    status === 'online'
-                                        ? `Stream is back online (${describeOnlineResult(result)})`
-                                        : describeOfflineResult(result),
-                                timestamp,
-                                type: status === 'online' ? 'success' : 'error',
-                            });
-                        }
-
-                        if (!isOnline && monitoringSettings.threshold > 0 && fails === monitoringSettings.threshold) {
-                            generatedEvents.push({
-                                id: `threshold-${timestamp}-${station.id}`,
-                                stationName: station.name,
-                                message: `Stream failed ${fails} checks in a row.`,
-                                timestamp,
-                                type: 'error',
-                            });
-                        }
-                    });
-
-                    return nextStatus;
-                });
-
-                if (generatedEvents.length > 0) {
-                    setMonitoringEvents(prev => [...generatedEvents, ...prev].slice(0, 100));
-                }
-            } catch (error) {
-                if (cancelled) {
-                    return;
-                }
-                console.error('Failed to check stream health', error);
-                const message = error instanceof Error ? error.message : 'Failed to check stream health.';
-                if (lastMonitorErrorRef.current !== message) {
-                    addToast(message, { type: 'error' });
-                    lastMonitorErrorRef.current = message;
-                    markToastHandled(error);
-                }
-            }
-        };
-
-        void runCheck();
+        monitorCancelledRef.current = false;
+        void runMonitoringCheck();
 
         const intervalMs = Math.max(1, monitoringSettings.interval) * 60 * 1000;
         const intervalId = window.setInterval(() => {
-            void runCheck();
+            void runMonitoringCheck();
         }, intervalMs);
 
         return () => {
-            cancelled = true;
+            monitorCancelledRef.current = true;
             window.clearInterval(intervalId);
         };
-    }, [
-        monitoringSettings.enabled,
-        monitoringSettings.interval,
-        monitoringSettings.threshold,
-        stations,
-        addToast,
-        checkStreamsHealth,
-    ]);
+    }, [monitoringSettings.enabled, monitoringSettings.interval, runMonitoringCheck, stations]);
 
     const renderView = () => {
         switch (currentView) {
