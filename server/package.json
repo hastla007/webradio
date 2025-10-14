@@ -5,6 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
+    "start:db": "node index-db.js",
     "migrate": "node migrate-to-postgres.js"
   },
   "dependencies": {
