@@ -11,7 +11,7 @@ const defaultData = require('../data/defaultData.json');
 const stationLogos = require('../data/stationLogos.json');
 
 const PORT = Number(process.env.PORT || 4000);
-const API_PREFIX = process.env.API_PREFIX || '/api';
+const API_PREFIX = normalizeApiPrefix(process.env.API_PREFIX);
 const EXPORT_OUTPUT_DIRECTORY = path.resolve(
     process.env.EXPORT_OUTPUT_DIR || path.join(__dirname, '..', 'exports')
 );
@@ -47,6 +47,32 @@ for (const entry of LOGO_ENTRIES) {
     if (name) {
         LOGOS_BY_NAME.set(name, logo);
     }
+}
+
+function normalizeApiPrefix(value) {
+    if (typeof value !== 'string') {
+        return '/api';
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return '/api';
+    }
+
+    if (trimmed === '/') {
+        return '/';
+    }
+
+    const segments = trimmed
+        .replace(/\/+$/, '')
+        .split('/')
+        .filter(Boolean);
+
+    if (segments.length === 0) {
+        return '/api';
+    }
+
+    return `/${segments.join('/')}`;
 }
 
 function sanitizeLogoValue(value) {

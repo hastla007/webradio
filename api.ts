@@ -26,7 +26,12 @@ import { normalizeStationLogo, normalizeStationLogos } from './stationLogos';
 
 type ApiStatusListener = (offline: boolean) => void;
 
-const DEFAULT_API_BASE_URL = 'http://localhost:4000/api';
+function getDefaultApiBaseUrl(): string {
+    if (typeof window !== 'undefined') {
+        return '/api';
+    }
+    return 'http://localhost:4000/api';
+}
 
 let offlineMode = false;
 const offlineListeners = new Set<ApiStatusListener>();
@@ -49,7 +54,16 @@ function sanitizeBaseUrl(baseUrl: unknown): string | null {
     if (!trimmed) {
         return null;
     }
-    return trimmed.replace(/\/+$/, '');
+    if (trimmed === '/') {
+        return '/';
+    }
+
+    const withoutTrailing = trimmed.replace(/\/+$/, '');
+    if (/^https?:\/\//i.test(withoutTrailing) || withoutTrailing.startsWith('/')) {
+        return withoutTrailing;
+    }
+
+    return `/${withoutTrailing}`;
 }
 
 function readBaseUrlFromEnv(): string | null {
@@ -68,7 +82,7 @@ function readBaseUrlFromEnv(): string | null {
         return sanitized;
     }
 
-    return sanitizeBaseUrl(DEFAULT_API_BASE_URL);
+    return sanitizeBaseUrl(getDefaultApiBaseUrl());
 }
 
 let apiBaseUrl: string | null = readBaseUrlFromEnv();
@@ -117,7 +131,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         headers['Content-Type'] = 'application/json';
     }
 
-    const response = await fetch(`${baseUrl}${path}`, {
+    const targetUrl = baseUrl === '/' ? path : `${baseUrl}${path}`;
+
+    const response = await fetch(targetUrl, {
         ...options,
         headers,
     });
