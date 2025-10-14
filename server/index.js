@@ -917,9 +917,25 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const registerApiRoute = (method, route, handler) => {
+    const normalized = route.startsWith('/') ? route : `/${route}`;
+    const prefix = API_PREFIX && API_PREFIX !== '/' ? API_PREFIX : '';
+    const paths = new Set([normalized]);
+
+    if (prefix) {
+        paths.add(`${prefix}${normalized}`);
+    }
+
+    for (const pathEntry of paths) {
+        if (typeof app[method] === 'function') {
+            app[method](pathEntry, handler);
+        }
+    }
+};
+
 let database;
 
-app.post(`${API_PREFIX}/monitor/check`, async (req, res) => {
+const handleMonitorCheck = async (req, res) => {
     const payload = req.body || {};
     const streams = Array.isArray(payload.streams) ? payload.streams : [];
     if (streams.length === 0) {
@@ -965,9 +981,11 @@ app.post(`${API_PREFIX}/monitor/check`, async (req, res) => {
         );
         res.status(500).json({ error: 'Failed to perform stream health check.' });
     }
-});
+};
 
-app.get(`${API_PREFIX}/health`, (req, res) => {
+registerApiRoute('post', '/monitor/check', handleMonitorCheck);
+
+registerApiRoute('get', '/health', (req, res) => {
     res.json({ status: 'ok' });
 });
 
@@ -996,7 +1014,7 @@ function sendSseEntry(res, entry) {
     res.write(`data: ${JSON.stringify(entry)}\n\n`);
 }
 
-app.get(`${API_PREFIX}/logs`, (req, res) => {
+const handleFetchLogs = (req, res) => {
     const categories = parseLogCategories(req.query.type || req.query.category || req.query.categories);
     const limit = parseNumberParam(req.query.limit) || 200;
     const cursor = parseNumberParam(req.query.cursor || req.query.after);
@@ -1005,9 +1023,11 @@ app.get(`${API_PREFIX}/logs`, (req, res) => {
     const nextCursor = entries.length > 0 ? entries[entries.length - 1].sequence : cursor ?? null;
 
     res.json({ entries, cursor: nextCursor });
-});
+};
 
-app.get(`${API_PREFIX}/logs/stream`, (req, res) => {
+registerApiRoute('get', '/logs', handleFetchLogs);
+
+const handleStreamLogs = (req, res) => {
     const categories = parseLogCategories(req.query.type || req.query.category || req.query.categories);
     const limit = parseNumberParam(req.query.limit) || 50;
     const cursor = parseNumberParam(req.query.cursor || req.query.after);
@@ -1042,7 +1062,9 @@ app.get(`${API_PREFIX}/logs/stream`, (req, res) => {
         clearInterval(heartbeat);
         unsubscribe();
     });
-});
+};
+
+registerApiRoute('get', '/logs/stream', handleStreamLogs);
 
 app.get(`${API_PREFIX}/genres`, (req, res) => {
     res.json(database.genres);

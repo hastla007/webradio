@@ -30,6 +30,8 @@ const EventLog: React.FC<{ event: MonitoringEvent }> = ({ event }) => {
 };
 
 
+const DEFAULT_STATUS: MonitoringStatus = { status: 'unknown', history: [], fails: 0 };
+
 const StreamMonitor: React.FC<StreamMonitorProps> = ({ stations, settings, status, events, onSaveSettings }) => {
     const [localSettings, setLocalSettings] = useState<MonitoringSettings>(settings);
     const [selectedStationId, setSelectedStationId] = useState<string | null>(stations[0]?.id || null);
@@ -38,6 +40,20 @@ const StreamMonitor: React.FC<StreamMonitorProps> = ({ stations, settings, statu
     React.useEffect(() => {
         setLocalSettings(settings);
     }, [settings]);
+
+    React.useEffect(() => {
+        if (stations.length === 0) {
+            setSelectedStationId(null);
+            return;
+        }
+
+        setSelectedStationId(previous => {
+            if (previous && stations.some(station => station.id === previous)) {
+                return previous;
+            }
+            return stations[0]?.id ?? null;
+        });
+    }, [stations]);
 
     const handleSettingsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value, type, checked } = e.target;
@@ -58,21 +74,30 @@ const StreamMonitor: React.FC<StreamMonitorProps> = ({ stations, settings, statu
         return ((onlineChecks / history.length) * 100).toFixed(2);
     };
 
-    const selectedStation = useMemo(() => stations.find(s => s.id === selectedStationId), [stations, selectedStationId]);
-    const selectedStatus = useMemo(() => (selectedStationId ? status[selectedStationId] : null), [status, selectedStationId]);
+    const selectedStation = useMemo(() => stations.find(s => s.id === selectedStationId) ?? null, [stations, selectedStationId]);
+    const selectedStatus = useMemo<MonitoringStatus | null>(
+        () => {
+            if (!selectedStationId) {
+                return null;
+            }
+            return status[selectedStationId] ?? DEFAULT_STATUS;
+        },
+        [status, selectedStationId]
+    );
     const stationEvents = useMemo(() =>
         selectedStation ? events.filter(e => e.stationName === selectedStation.name).slice(0, 20) : [],
         [events, selectedStation]
     );
-    const lastCheckedLabel = selectedStatus?.lastCheckedAt
-        ? new Date(selectedStatus.lastCheckedAt).toLocaleTimeString()
+    const resolvedStatus = selectedStatus ?? DEFAULT_STATUS;
+    const lastCheckedLabel = resolvedStatus.lastCheckedAt
+        ? new Date(resolvedStatus.lastCheckedAt).toLocaleTimeString()
         : 'Not checked yet';
-    const responseTimeLabel = selectedStatus?.responseTime != null ? `${selectedStatus.responseTime} ms` : '—';
-    const statusCodeLabel = selectedStatus?.statusCode != null ? selectedStatus.statusCode : '—';
-    const selectedStatusVariant = selectedStatus?.status ?? 'unknown';
-    const selectedStatusLabel = selectedStatus?.status === 'online'
+    const responseTimeLabel = resolvedStatus.responseTime != null ? `${resolvedStatus.responseTime} ms` : '—';
+    const statusCodeLabel = resolvedStatus.statusCode != null ? resolvedStatus.statusCode : '—';
+    const selectedStatusVariant = resolvedStatus.status;
+    const selectedStatusLabel = resolvedStatus.status === 'online'
         ? 'Online'
-        : selectedStatus?.status === 'offline'
+        : resolvedStatus.status === 'offline'
         ? 'Offline'
         : 'Unknown';
 
@@ -90,7 +115,7 @@ const StreamMonitor: React.FC<StreamMonitorProps> = ({ stations, settings, statu
                     <h2 className="text-xl font-bold mb-4 px-2 dark:text-white">Stations</h2>
                     <div className="space-y-2 max-h-[80vh] overflow-y-auto">
                         {stations.map(station => {
-                            const stationStatus = status[station.id];
+                            const stationStatus = status[station.id] ?? DEFAULT_STATUS;
                             const isSelected = station.id === selectedStationId;
                             const badgeStatus = stationStatus?.status === 'online'
                                 ? 'online'
@@ -126,8 +151,8 @@ const StreamMonitor: React.FC<StreamMonitorProps> = ({ stations, settings, statu
 
                 {/* Right Column: Detailed View */}
                 <div className="lg:col-span-2 space-y-6">
-                    {selectedStation && selectedStatus ? (
-                         <>
+                    {selectedStation ? (
+                        <>
                             <div className="bg-brand-surface dark:bg-brand-dark-surface p-6 rounded-2xl shadow-sm border border-brand-border dark:border-gray-700">
                                 <div className="flex flex-wrap items-center justify-between gap-4">
                                     <div className="flex items-center gap-4">
@@ -142,7 +167,7 @@ const StreamMonitor: React.FC<StreamMonitorProps> = ({ stations, settings, statu
                                     />
                                 </div>
                                 <div className="mt-4 h-7">
-                                    <UptimeBar history={selectedStatus.history} className="h-full" />
+                                    <UptimeBar history={resolvedStatus.history} className="h-full" />
                                 </div>
                                 <div className="mt-3 flex flex-wrap items-center justify-between text-xs text-brand-text-light dark:text-gray-500 gap-2">
                                     <span>Last checked: {lastCheckedLabel}</span>
@@ -153,7 +178,7 @@ const StreamMonitor: React.FC<StreamMonitorProps> = ({ stations, settings, statu
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
                                 <div className="bg-brand-surface dark:bg-brand-dark-surface p-4 rounded-2xl shadow-sm border border-brand-border dark:border-gray-700">
                                     <h4 className="text-sm text-brand-text-light dark:text-gray-400">Uptime (24h)</h4>
-                                    <p className="text-xl font-bold dark:text-white">{calculateUptime(selectedStatus.history)}%</p>
+                                    <p className="text-xl font-bold dark:text-white">{calculateUptime(resolvedStatus.history)}%</p>
                                 </div>
                                 <div className="bg-brand-surface dark:bg-brand-dark-surface p-4 rounded-2xl shadow-sm border border-brand-border dark:border-gray-700">
                                     <h4 className="text-sm text-brand-text-light dark:text-gray-400">Current Status</h4>
@@ -169,7 +194,7 @@ const StreamMonitor: React.FC<StreamMonitorProps> = ({ stations, settings, statu
                                 </div>
                                 <div className="bg-brand-surface dark:bg-brand-dark-surface p-4 rounded-2xl shadow-sm border border-brand-border dark:border-gray-700">
                                     <h4 className="text-sm text-brand-text-light dark:text-gray-400">Consecutive Fails</h4>
-                                    <p className="text-xl font-bold dark:text-white">{selectedStatus.fails}</p>
+                                    <p className="text-xl font-bold dark:text-white">{resolvedStatus.fails}</p>
                                 </div>
                                 <div className="bg-brand-surface dark:bg-brand-dark-surface p-4 rounded-2xl shadow-sm border border-brand-border dark:border-gray-700">
                                     <h4 className="text-sm text-brand-text-light dark:text-gray-400">App Status</h4>
@@ -181,14 +206,14 @@ const StreamMonitor: React.FC<StreamMonitorProps> = ({ stations, settings, statu
 
                             <div className="bg-brand-surface dark:bg-brand-dark-surface p-6 rounded-2xl shadow-sm border border-brand-border dark:border-gray-700">
                                 <h2 className="text-xl font-bold mb-4 dark:text-white">Recent Events for {selectedStation.name}</h2>
-                                {selectedStatus.error && (
+                                {resolvedStatus.error && (
                                     <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-200">
-                                        {selectedStatus.error}
+                                        {resolvedStatus.error}
                                     </div>
                                 )}
-                                {selectedStatus.contentType && (
+                                {resolvedStatus.contentType && (
                                     <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900/40 dark:bg-blue-900/20 dark:text-blue-200">
-                                        Content type: {selectedStatus.contentType}
+                                        Content type: {resolvedStatus.contentType}
                                     </div>
                                 )}
                                 <ul className="space-y-1">
