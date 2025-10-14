@@ -6,6 +6,7 @@ import GenreManager from './components/GenreManager';
 import ExportManager from './components/ExportManager';
 import PlayerManager from './components/PlayerManager';
 import StreamMonitor from './components/StreamMonitor';
+import LogViewer from './components/LogViewer';
 import ListenPage from './components/ListenPage';
 import SettingsPage from './components/SettingsPage';
 import { useToast, markToastHandled } from './components/ToastProvider';
@@ -42,7 +43,44 @@ import {
     checkStreamsHealth,
 } from './api';
 
-export type View = 'dashboard' | 'stations' | 'genres' | 'export' | 'listen' | 'players' | 'monitoring' | 'settings';
+export type View =
+    | 'dashboard'
+    | 'stations'
+    | 'genres'
+    | 'export'
+    | 'listen'
+    | 'players'
+    | 'monitoring'
+    | 'logs'
+    | 'settings';
+
+const describeOnlineResult = (result?: StreamHealthResult) => {
+    if (!result) {
+        return 'online';
+    }
+
+    const parts: string[] = [];
+    if (typeof result.statusCode === 'number') {
+        parts.push(`status ${result.statusCode}`);
+    }
+    if (typeof result.responseTime === 'number') {
+        parts.push(`${result.responseTime}ms`);
+    }
+    return parts.length > 0 ? parts.join(', ') : 'online';
+};
+
+const describeOfflineResult = (result?: StreamHealthResult) => {
+    if (!result) {
+        return 'Stream unreachable';
+    }
+    if (result.error) {
+        return `Stream offline: ${result.error}`;
+    }
+    if (typeof result.statusCode === 'number') {
+        return `Stream offline (status ${result.statusCode})`;
+    }
+    return 'Stream offline';
+};
 
 const describeOnlineResult = (result?: StreamHealthResult) => {
     if (!result) {
@@ -558,6 +596,8 @@ const App: React.FC = () => {
                 return <ListenPage stations={stations} genres={genres} />;
             case 'monitoring':
                 return <StreamMonitor stations={stations} settings={monitoringSettings} status={monitoringStatus} events={monitoringEvents} onSaveSettings={setMonitoringSettings} />;
+            case 'logs':
+                return <LogViewer isOffline={isOfflineMode} />;
             case 'settings':
                 return (
                     <SettingsPage

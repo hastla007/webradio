@@ -1,6 +1,6 @@
 import React from 'react';
 import { View } from '../App';
-import { HomeIcon, RadioIcon, TagIcon, ExportIcon, PulseIcon, DeviceIcon, HeadphonesIcon, SettingsIcon } from './Icons';
+import { HomeIcon, RadioIcon, TagIcon, ExportIcon, PulseIcon, DeviceIcon, HeadphonesIcon, LogsIcon, SettingsIcon } from './Icons';
 
 interface SidebarProps {
   currentView: View;
@@ -17,6 +17,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => {
     { id: 'listen', label: 'Listen', icon: <HeadphonesIcon /> },
     { id: 'players', label: 'Apps / Players', icon: <DeviceIcon /> },
     { id: 'monitoring', label: 'Monitoring', icon: <PulseIcon /> },
+    { id: 'logs', label: 'Logs', icon: <LogsIcon /> },
     { id: 'settings', label: 'Settings', icon: <SettingsIcon /> },
   ];
 

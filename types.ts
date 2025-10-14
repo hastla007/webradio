@@ -147,3 +147,22 @@ export interface StreamHealthResult {
   responseTime?: number;
   error?: string;
 }
+
+export type LogCategory =
+  | 'system'
+  | 'errors'
+  | 'stations'
+  | 'exports'
+  | 'monitoring'
+  | 'players'
+  | 'genres';
+
+export interface LogEntry {
+  id: string;
+  sequence: number;
+  timestamp: number;
+  level: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+  category: LogCategory | string;
+  message: string;
+  details: Record<string, unknown>;
+}

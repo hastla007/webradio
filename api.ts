@@ -1,4 +1,13 @@
-import { ExportProfile, Genre, PlayerApp, ProfileExportSummary, RadioStation, StreamHealthResult } from './types';
+import {
+    ExportProfile,
+    Genre,
+    LogCategory,
+    LogEntry,
+    PlayerApp,
+    ProfileExportSummary,
+    RadioStation,
+    StreamHealthResult,
+} from './types';
 import {
     getStations as getOfflineStations,
     saveStation as saveOfflineStation,
@@ -314,3 +323,95 @@ export const removePlayerApp = (appId: string) => withFallback(
     }),
     () => deleteOfflinePlayerApp(appId),
 );
+
+interface LogListResponse {
+    entries: LogEntry[];
+    cursor: number | null;
+}
+
+export interface LogQueryOptions {
+    categories?: LogCategory[];
+    limit?: number;
+    cursor?: number | null;
+}
+
+function buildLogQuery(options: LogQueryOptions = {}) {
+    const params = new URLSearchParams();
+    if (options.categories && options.categories.length > 0) {
+        params.set('type', options.categories.join(','));
+    }
+    if (typeof options.limit === 'number' && Number.isFinite(options.limit)) {
+        params.set('limit', String(options.limit));
+    }
+    if (typeof options.cursor === 'number' && Number.isFinite(options.cursor)) {
+        params.set('cursor', String(options.cursor));
+    }
+    const query = params.toString();
+    return query ? `?${query}` : '';
+}
+
+export const fetchLogs = (options: LogQueryOptions = {}) =>
+    withFallback(
+        () => request<LogListResponse>(`/logs${buildLogQuery(options)}`),
+        () => ({ entries: [], cursor: options.cursor ?? null })
+    );
+
+export interface LogStreamOptions {
+    categories?: LogCategory[];
+    cursor?: number | null;
+    limit?: number;
+}
+
+export interface LogStreamHandlers {
+    onEntry?: (entry: LogEntry) => void;
+    onError?: (event: Event) => void;
+}
+
+export interface LogStreamHandle {
+    close: () => void;
+}
+
+export const subscribeToLogStream = (
+    options: LogStreamOptions = {},
+    handlers: LogStreamHandlers = {}
+): LogStreamHandle => {
+    const baseUrl = getApiBaseUrl();
+    const globalWindow: typeof window | undefined = typeof window !== 'undefined' ? window : undefined;
+    if (!baseUrl || !globalWindow || typeof globalWindow.EventSource === 'undefined') {
+        return { close: () => {} };
+    }
+
+    const params = new URLSearchParams();
+    if (options.categories && options.categories.length > 0) {
+        params.set('type', options.categories.join(','));
+    }
+    if (typeof options.cursor === 'number' && Number.isFinite(options.cursor)) {
+        params.set('cursor', String(options.cursor));
+    }
+    if (typeof options.limit === 'number' && Number.isFinite(options.limit)) {
+        params.set('limit', String(options.limit));
+    }
+
+    const url = `${baseUrl}/logs/stream${params.toString() ? `?${params.toString()}` : ''}`;
+    const eventSource = new globalWindow.EventSource(url);
+
+    eventSource.addEventListener('log', event => {
+        try {
+            const parsed = JSON.parse((event as MessageEvent).data) as LogEntry;
+            handlers.onEntry?.(parsed);
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error('Failed to parse log stream event', error);
+        }
+    });
+
+    if (handlers.onError) {
+        eventSource.onerror = handlers.onError;
+    }
+
+    return {
+        close: () => {
+            eventSource.close();
+        },
+    };
+};
