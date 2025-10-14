@@ -7,6 +7,8 @@
 const fs = require('fs');
 const path = require('path');
 const { pool } = require('./db');
+const { encryptSecret, isEncryptedSecret } = require('./secrets');
+const { normalizeProtocol, sanitizeTimeout } = require('./ftp');
 
 const defaultDataPath = path.join(__dirname, '..', 'data', 'defaultData.json');
 
@@ -88,12 +90,16 @@ async function migrate() {
         // Migrate Player Apps
         console.log('📱 Migrating player apps...');
         for (const app of data.playerApps || []) {
+            const password = typeof app.ftpPassword === 'string' ? app.ftpPassword : '';
+            const storedPassword = password && !isEncryptedSecret(password) ? encryptSecret(password) : password;
+            const ftpProtocol = normalizeProtocol(app.ftpProtocol, app.ftpServer);
+            const ftpTimeout = sanitizeTimeout(app.ftpTimeout);
             await pool.query(
                 `INSERT INTO player_apps (
                     id, name, platforms, platform, description, contact_email, notes,
-                    ftp_enabled, ftp_server, ftp_username, ftp_password, network_code,
+                    ftp_enabled, ftp_server, ftp_username, ftp_password, ftp_protocol, ftp_timeout_ms, network_code,
                     ima_enabled, video_preroll_default_size, placements
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                 ON CONFLICT (id) DO UPDATE SET
                     name = EXCLUDED.name,
                     platforms = EXCLUDED.platforms,
@@ -105,6 +111,8 @@ async function migrate() {
                     ftp_server = EXCLUDED.ftp_server,
                     ftp_username = EXCLUDED.ftp_username,
                     ftp_password = EXCLUDED.ftp_password,
+                    ftp_protocol = EXCLUDED.ftp_protocol,
+                    ftp_timeout_ms = EXCLUDED.ftp_timeout_ms,
                     network_code = EXCLUDED.network_code,
                     ima_enabled = EXCLUDED.ima_enabled,
                     video_preroll_default_size = EXCLUDED.video_preroll_default_size,
@@ -120,7 +128,9 @@ async function migrate() {
                     app.ftpEnabled || false,
                     app.ftpServer || '',
                     app.ftpUsername || '',
-                    app.ftpPassword || '',
+                    storedPassword,
+                    ftpProtocol,
+                    ftpTimeout,
                     app.networkCode || '',
                     app.imaEnabled !== false,
                     app.videoPrerollDefaultSize || '640x480',

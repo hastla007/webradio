@@ -1,4 +1,6 @@
 const { pool } = require('./db');
+const { encryptSecret, decryptSecret, isEncryptedSecret } = require('./secrets');
+const { sanitizeTimeout, normalizeProtocol } = require('./ftp');
 
 // ==================== GENRES ====================
 
@@ -173,7 +175,9 @@ async function getAllPlayerApps() {
         ftpEnabled: row.ftp_enabled,
         ftpServer: row.ftp_server,
         ftpUsername: row.ftp_username,
-        ftpPassword: row.ftp_password,
+        ftpPassword: decryptSecret(row.ftp_password || ''),
+        ftpProtocol: normalizeProtocol(row.ftp_protocol, row.ftp_server),
+        ftpTimeout: sanitizeTimeout(row.ftp_timeout_ms),
         networkCode: row.network_code,
         imaEnabled: row.ima_enabled,
         videoPrerollDefaultSize: row.video_preroll_default_size,
@@ -196,7 +200,9 @@ async function getPlayerAppById(id) {
         ftpEnabled: row.ftp_enabled,
         ftpServer: row.ftp_server,
         ftpUsername: row.ftp_username,
-        ftpPassword: row.ftp_password,
+        ftpPassword: decryptSecret(row.ftp_password || ''),
+        ftpProtocol: normalizeProtocol(row.ftp_protocol, row.ftp_server),
+        ftpTimeout: sanitizeTimeout(row.ftp_timeout_ms),
         networkCode: row.network_code,
         imaEnabled: row.ima_enabled,
         videoPrerollDefaultSize: row.video_preroll_default_size,
@@ -205,12 +211,16 @@ async function getPlayerAppById(id) {
 }
 
 async function createPlayerApp(app) {
+    const ftpProtocol = normalizeProtocol(app.ftpProtocol, app.ftpServer);
+    const ftpTimeout = sanitizeTimeout(app.ftpTimeout);
+    const password = typeof app.ftpPassword === 'string' ? app.ftpPassword : '';
+    const storedPassword = password && !isEncryptedSecret(password) ? encryptSecret(password) : password;
     const result = await pool.query(
         `INSERT INTO player_apps (
             id, name, platforms, platform, description, contact_email, notes,
-            ftp_enabled, ftp_server, ftp_username, ftp_password, network_code,
+            ftp_enabled, ftp_server, ftp_username, ftp_password, ftp_protocol, ftp_timeout_ms, network_code,
             ima_enabled, video_preroll_default_size, placements
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         RETURNING *`,
         [
             app.id,
@@ -223,7 +233,9 @@ async function createPlayerApp(app) {
             app.ftpEnabled,
             app.ftpServer,
             app.ftpUsername,
-            app.ftpPassword,
+            storedPassword,
+            ftpProtocol,
+            ftpTimeout,
             app.networkCode,
             app.imaEnabled,
             app.videoPrerollDefaultSize,
@@ -234,13 +246,17 @@ async function createPlayerApp(app) {
 }
 
 async function updatePlayerApp(id, app) {
+    const ftpProtocol = normalizeProtocol(app.ftpProtocol, app.ftpServer);
+    const ftpTimeout = sanitizeTimeout(app.ftpTimeout);
+    const password = typeof app.ftpPassword === 'string' ? app.ftpPassword : '';
+    const storedPassword = password && !isEncryptedSecret(password) ? encryptSecret(password) : password;
     const result = await pool.query(
         `UPDATE player_apps SET
             name = $1, platforms = $2, platform = $3, description = $4,
             contact_email = $5, notes = $6, ftp_enabled = $7, ftp_server = $8,
-            ftp_username = $9, ftp_password = $10, network_code = $11,
-            ima_enabled = $12, video_preroll_default_size = $13, placements = $14
-        WHERE id = $15 RETURNING *`,
+            ftp_username = $9, ftp_password = $10, ftp_protocol = $11, ftp_timeout_ms = $12, network_code = $13,
+            ima_enabled = $14, video_preroll_default_size = $15, placements = $16
+        WHERE id = $17 RETURNING *`,
         [
             app.name,
             JSON.stringify(app.platforms || []),
@@ -251,7 +267,9 @@ async function updatePlayerApp(id, app) {
             app.ftpEnabled,
             app.ftpServer,
             app.ftpUsername,
-            app.ftpPassword,
+            storedPassword,
+            ftpProtocol,
+            ftpTimeout,
             app.networkCode,
             app.imaEnabled,
             app.videoPrerollDefaultSize,

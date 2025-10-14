@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS player_apps (
     ftp_server VARCHAR(255) DEFAULT '',
     ftp_username VARCHAR(255) DEFAULT '',
     ftp_password VARCHAR(255) DEFAULT '',
+    ftp_protocol VARCHAR(16) DEFAULT 'ftp',
+    ftp_timeout_ms INTEGER DEFAULT 30000,
     network_code VARCHAR(50) DEFAULT '',
     ima_enabled BOOLEAN DEFAULT true,
     video_preroll_default_size VARCHAR(20) DEFAULT '640x480',

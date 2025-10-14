@@ -18,6 +18,7 @@ const ExportManager: React.FC<ExportManagerProps> = ({ profiles, stations, genre
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProfile, setEditingProfile] = useState<ExportProfile | null>(null);
     const [activeExportId, setActiveExportId] = useState<string | null>(null);
+    const [activeDownloadId, setActiveDownloadId] = useState<string | null>(null);
     const { addToast } = useToast();
 
     const getStationsForProfile = useCallback((profile: ExportProfile) => {
@@ -72,6 +73,33 @@ const ExportManager: React.FC<ExportManagerProps> = ({ profiles, stations, genre
             if (!wasToastHandled(error)) {
                 addToast('Failed to save export profile.', { type: 'error' });
             }
+        }
+    };
+
+    const handleDownload = async (profile: ExportProfile) => {
+        try {
+            setActiveDownloadId(profile.id);
+            const response = await fetch(`/api/export-profiles/${profile.id}/download`);
+            if (!response.ok) {
+                throw new Error('Failed to download export profile');
+            }
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${profile.name}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Failed to download export profile', error);
+            if (!wasToastHandled(error)) {
+                addToast('Failed to download export profile.', { type: 'error' });
+            }
+            markToastHandled(error);
+        } finally {
+            setActiveDownloadId(null);
         }
     };
 
@@ -164,6 +192,13 @@ const ExportManager: React.FC<ExportManagerProps> = ({ profiles, stations, genre
                                     className="px-4 py-2 text-sm font-semibold bg-brand-primary text-brand-dark rounded-lg hover:bg-brand-primary/80 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
                                 >
                                     {activeExportId === profile.id ? 'Exporting…' : 'Export Now'}
+                                </button>
+                                <button
+                                    onClick={() => handleDownload(profile)}
+                                    disabled={activeDownloadId === profile.id}
+                                    className="px-4 py-2 text-sm font-semibold bg-white text-brand-dark border border-brand-border rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                                >
+                                    {activeDownloadId === profile.id ? 'Preparing…' : 'Download Files'}
                                 </button>
                                 <button onClick={() => handleEdit(profile)} className="p-2 text-brand-text-light hover:bg-gray-100 rounded-lg transition-colors">
                                     <EditIcon />
