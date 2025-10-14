@@ -87,6 +87,13 @@ export const HeadphonesIcon = () => (
     </svg>
 );
 
+export const LogsIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V9l-4-4H9z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6M9 16h6M13 5v4h4" />
+    </svg>
+);
+
 export const SettingsIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path
@@ -96,6 +103,18 @@ export const SettingsIcon = () => (
             d="M11.049 2.927c.3-1.14 1.902-1.14 2.202 0a1.724 1.724 0 002.573 1.02c1.01-.582 2.192.6 1.61 1.61a1.724 1.724 0 001.02 2.572c1.14.3 1.14 1.903 0 2.203a1.724 1.724 0 00-1.02 2.572c.582 1.01-.6 2.192-1.61 1.61a1.724 1.724 0 00-2.572 1.02c-.3 1.14-1.903 1.14-2.203 0a1.724 1.724 0 00-2.572-1.02c-1.01.582-2.192-.6-1.61-1.61a1.724 1.724 0 00-1.02-2.572c-1.14-.3-1.14-1.903 0-2.203a1.724 1.724 0 001.02-2.572c-.582-1.01.6-2.192 1.61-1.61.996.574 2.27.03 2.572-1.02z"
         />
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+);
+
+export const SunIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+        <path d="M10 4.5a.75.75 0 01.75-.75h.5a.75.75 0 010 1.5h-.5A.75.75 0 0110 4.5zm0 11a.75.75 0 01.75-.75h.5a.75.75 0 010 1.5h-.5a.75.75 0 01-.75-.75zM4.5 10a.75.75 0 01-.75-.75v-.5a.75.75 0 011.5 0v.5A.75.75 0 014.5 10zm11 0a.75.75 0 01-.75-.75v-.5a.75.75 0 011.5 0v.5a.75.75 0 01-.75.75zM6.22 6.22a.75.75 0 011.06-1.06l.35.35a.75.75 0 01-1.06 1.06l-.35-.35zm6.2 6.2a.75.75 0 011.06-1.06l.35.35a.75.75 0 01-1.06 1.06l-.35-.35zm0-7.26a.75.75 0 010-1.06l.35-.35a.75.75 0 011.06 1.06l-.35.35a.75.75 0 01-1.06 0zm-6.2 6.2a.75.75 0 010-1.06l.35-.35a.75.75 0 011.06 1.06l-.35.35a.75.75 0 01-1.06 0zM10 6.25A3.75 3.75 0 1010 13.75 3.75 3.75 0 0010 6.25z" />
+    </svg>
+);
+
+export const MoonIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+        <path d="M17.293 13.293A8 8 0 016.707 2.707 6 6 0 0010 18a6 6 0 007.293-4.707z" />
     </svg>
 );
 

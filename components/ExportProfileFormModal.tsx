@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ExportProfile, Genre, RadioStation, AutoExportConfig, PlayerApp } from '../types';
 import { CloseIcon } from './Icons';
+import { useToast, wasToastHandled } from './ToastProvider';
+import { generateId } from '../utils/id';
 
 interface ExportProfileFormModalProps {
   profile: ExportProfile | null;
@@ -31,6 +33,7 @@ const ExportProfileFormModal: React.FC<ExportProfileFormModalProps> = ({
     interval: 'daily',
     time: '09:00',
   });
+  const { addToast } = useToast();
 
   useEffect(() => {
     if (profile) {
@@ -114,12 +117,12 @@ const ExportProfileFormModal: React.FC<ExportProfileFormModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      alert('Please provide a name for the export profile.');
+      addToast('Please provide a name for the export profile.', { type: 'error' });
       return;
     }
 
     const newProfile: ExportProfile = {
-      id: profile?.id || `ep${Date.now()}`,
+      id: profile?.id || generateId('export-profile'),
       name,
       genreIds: selectedGenreIds,
       stationIds: selectedStationIds,
@@ -132,6 +135,9 @@ const ExportProfileFormModal: React.FC<ExportProfileFormModalProps> = ({
       await onSave(newProfile);
     } catch (error) {
       console.error('Failed to save export profile', error);
+      if (!wasToastHandled(error)) {
+        addToast('Failed to save export profile.', { type: 'error' });
+      }
     }
   };
 

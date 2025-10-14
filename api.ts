@@ -1,4 +1,13 @@
-import { ExportProfile, Genre, PlayerApp, ProfileExportSummary, RadioStation } from './types';
+import {
+    ExportProfile,
+    Genre,
+    LogCategory,
+    LogEntry,
+    PlayerApp,
+    ProfileExportSummary,
+    RadioStation,
+    StreamHealthResult,
+} from './types';
 import {
     getStations as getOfflineStations,
     saveStation as saveOfflineStation,
@@ -17,7 +26,12 @@ import { normalizeStationLogo, normalizeStationLogos } from './stationLogos';
 
 type ApiStatusListener = (offline: boolean) => void;
 
-const DEFAULT_API_BASE_URL = 'http://localhost:4000/api';
+function getDefaultApiBaseUrl(): string {
+    if (typeof window !== 'undefined') {
+        return '/api';
+    }
+    return 'http://localhost:4000/api';
+}
 
 let offlineMode = false;
 const offlineListeners = new Set<ApiStatusListener>();
@@ -40,7 +54,16 @@ function sanitizeBaseUrl(baseUrl: unknown): string | null {
     if (!trimmed) {
         return null;
     }
-    return trimmed.replace(/\/+$/, '');
+    if (trimmed === '/') {
+        return '/';
+    }
+
+    const withoutTrailing = trimmed.replace(/\/+$/, '');
+    if (/^https?:\/\//i.test(withoutTrailing) || withoutTrailing.startsWith('/')) {
+        return withoutTrailing;
+    }
+
+    return `/${withoutTrailing}`;
 }
 
 function readBaseUrlFromEnv(): string | null {
@@ -59,7 +82,7 @@ function readBaseUrlFromEnv(): string | null {
         return sanitized;
     }
 
-    return sanitizeBaseUrl(DEFAULT_API_BASE_URL);
+    return sanitizeBaseUrl(getDefaultApiBaseUrl());
 }
 
 let apiBaseUrl: string | null = readBaseUrlFromEnv();
@@ -108,7 +131,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         headers['Content-Type'] = 'application/json';
     }
 
-    const response = await fetch(`${baseUrl}${path}`, {
+    const targetUrl = baseUrl === '/' ? path : `${baseUrl}${path}`;
+
+    const response = await fetch(targetUrl, {
         ...options,
         headers,
     });
@@ -199,6 +224,35 @@ export const fetchGenres = () => withFallback(
     () => getOfflineGenres(),
 );
 
+interface StreamHealthRequest {
+    stationId: string;
+    streamUrl: string;
+}
+
+const simulateStreamHealth = (streams: StreamHealthRequest[]): StreamHealthResult[] => {
+    return streams.map(stream => {
+        const isOnline = Math.random() > 0.15;
+        return {
+            stationId: stream.stationId,
+            isOnline,
+            statusCode: isOnline ? 200 : 503,
+            contentType: isOnline ? 'audio/mpeg' : null,
+            responseTime: Math.floor(150 + Math.random() * 600),
+            error: isOnline ? undefined : 'Stream unavailable in offline mode.',
+        } satisfies StreamHealthResult;
+    });
+};
+
+export const checkStreamsHealth = (streams: StreamHealthRequest[], timeoutMs = 5000) =>
+    withFallback(
+        () =>
+            request<StreamHealthResult[]>('/monitor/check', {
+                method: 'POST',
+                body: JSON.stringify({ streams, timeoutMs }),
+            }),
+        () => simulateStreamHealth(streams),
+    );
+
 export const createGenre = (genre: Genre) => withFallback(
     () => request<Genre>('/genres', {
         method: 'POST',
@@ -285,3 +339,95 @@ export const removePlayerApp = (appId: string) => withFallback(
     }),
     () => deleteOfflinePlayerApp(appId),
 );
+
+interface LogListResponse {
+    entries: LogEntry[];
+    cursor: number | null;
+}
+
+export interface LogQueryOptions {
+    categories?: LogCategory[];
+    limit?: number;
+    cursor?: number | null;
+}
+
+function buildLogQuery(options: LogQueryOptions = {}) {
+    const params = new URLSearchParams();
+    if (options.categories && options.categories.length > 0) {
+        params.set('type', options.categories.join(','));
+    }
+    if (typeof options.limit === 'number' && Number.isFinite(options.limit)) {
+        params.set('limit', String(options.limit));
+    }
+    if (typeof options.cursor === 'number' && Number.isFinite(options.cursor)) {
+        params.set('cursor', String(options.cursor));
+    }
+    const query = params.toString();
+    return query ? `?${query}` : '';
+}
+
+export const fetchLogs = (options: LogQueryOptions = {}) =>
+    withFallback(
+        () => request<LogListResponse>(`/logs${buildLogQuery(options)}`),
+        () => ({ entries: [], cursor: options.cursor ?? null })
+    );
+
+export interface LogStreamOptions {
+    categories?: LogCategory[];
+    cursor?: number | null;
+    limit?: number;
+}
+
+export interface LogStreamHandlers {
+    onEntry?: (entry: LogEntry) => void;
+    onError?: (event: Event) => void;
+}
+
+export interface LogStreamHandle {
+    close: () => void;
+}
+
+export const subscribeToLogStream = (
+    options: LogStreamOptions = {},
+    handlers: LogStreamHandlers = {}
+): LogStreamHandle => {
+    const baseUrl = getApiBaseUrl();
+    const globalWindow: typeof window | undefined = typeof window !== 'undefined' ? window : undefined;
+    if (!baseUrl || !globalWindow || typeof globalWindow.EventSource === 'undefined') {
+        return { close: () => {} };
+    }
+
+    const params = new URLSearchParams();
+    if (options.categories && options.categories.length > 0) {
+        params.set('type', options.categories.join(','));
+    }
+    if (typeof options.cursor === 'number' && Number.isFinite(options.cursor)) {
+        params.set('cursor', String(options.cursor));
+    }
+    if (typeof options.limit === 'number' && Number.isFinite(options.limit)) {
+        params.set('limit', String(options.limit));
+    }
+
+    const url = `${baseUrl}/logs/stream${params.toString() ? `?${params.toString()}` : ''}`;
+    const eventSource = new globalWindow.EventSource(url);
+
+    eventSource.addEventListener('log', event => {
+        try {
+            const parsed = JSON.parse((event as MessageEvent).data) as LogEntry;
+            handlers.onEntry?.(parsed);
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error('Failed to parse log stream event', error);
+        }
+    });
+
+    if (handlers.onError) {
+        eventSource.onerror = handlers.onError;
+    }
+
+    return {
+        close: () => {
+            eventSource.close();
+        },
+    };
+};
