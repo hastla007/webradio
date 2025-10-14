@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Genre, RadioStation } from '../types';
-import { getStationLogoUrl } from '../stationLogos';
+import StationLogo from './StationLogo';
 
 interface ListenPageProps {
     stations: RadioStation[];
@@ -210,10 +210,11 @@ const ListenPage: React.FC<ListenPageProps> = ({ stations, genres }) => {
                     {currentStation ? (
                         <div className="flex flex-col gap-6">
                             <div className="flex items-start gap-4">
-                                <img
-                                    src={getStationLogoUrl(currentStation.logoUrl)}
-                                    alt={currentStation.name}
-                                    className="h-20 w-20 rounded-2xl object-cover shadow-md"
+                                <StationLogo
+                                    name={currentStation.name}
+                                    logoUrl={currentStation.logoUrl}
+                                    size={80}
+                                    className="rounded-2xl shadow-md"
                                 />
                                 <div className="space-y-2">
                                     <span className="inline-flex items-center rounded-full bg-brand-primary/10 px-3 py-1 text-xs font-medium text-brand-dark">
@@ -416,10 +417,11 @@ const ListenPage: React.FC<ListenPageProps> = ({ stations, genres }) => {
                                 }`}
                             >
                                 <div className="flex items-center gap-3">
-                                    <img
-                                        src={getStationLogoUrl(station.logoUrl)}
-                                        alt={station.name}
-                                        className="h-12 w-12 flex-shrink-0 rounded-xl object-cover shadow-sm"
+                                    <StationLogo
+                                        name={station.name}
+                                        logoUrl={station.logoUrl}
+                                        size={48}
+                                        className="rounded-xl shadow-sm"
                                     />
                                     <div>
                                         <p className="text-sm font-semibold text-brand-dark">{station.name}</p>

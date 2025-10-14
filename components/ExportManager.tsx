@@ -3,6 +3,7 @@ import { ExportProfile, Genre, PlayerApp, RadioStation } from '../types';
 import ExportProfileFormModal from './ExportProfileFormModal';
 import { PlusIcon, EditIcon, TrashIcon, ClockIcon } from './Icons';
 import { runProfileExport } from '../api';
+import { useToast, wasToastHandled, markToastHandled } from './ToastProvider';
 
 interface ExportManagerProps {
     profiles: ExportProfile[];
@@ -17,6 +18,7 @@ const ExportManager: React.FC<ExportManagerProps> = ({ profiles, stations, genre
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProfile, setEditingProfile] = useState<ExportProfile | null>(null);
     const [activeExportId, setActiveExportId] = useState<string | null>(null);
+    const { addToast } = useToast();
 
     const getStationsForProfile = useCallback((profile: ExportProfile) => {
         const byId = new Map<string, RadioStation>();
@@ -67,6 +69,9 @@ const ExportManager: React.FC<ExportManagerProps> = ({ profiles, stations, genre
             setIsModalOpen(false);
         } catch (error) {
             console.error('Failed to save export profile', error);
+            if (!wasToastHandled(error)) {
+                addToast('Failed to save export profile.', { type: 'error' });
+            }
         }
     };
 
@@ -76,7 +81,7 @@ const ExportManager: React.FC<ExportManagerProps> = ({ profiles, stations, genre
             const summary = await runProfileExport(profile.id);
             const stationCount = summary ? Number(summary.stationCount) || 0 : 0;
             if (!summary || stationCount === 0 || !Array.isArray(summary.files) || summary.files.length === 0) {
-                alert('This export profile does not include any active stations to export.');
+                addToast('This export profile does not include any active stations to export.', { type: 'warning' });
                 return;
             }
 
@@ -86,16 +91,20 @@ const ExportManager: React.FC<ExportManagerProps> = ({ profiles, stations, genre
                 return `• ${file.fileName}${suffix}`;
             });
 
-            alert(
+            addToast(
                 [
                     `Export complete! ${stationCount} ${stationCount === 1 ? 'station' : 'stations'} saved to ${savedDirectory}.`,
                     ...bulletPoints,
                 ].join('\n'),
+                { type: 'success', duration: 6000 },
             );
         } catch (error) {
             console.error('Failed to export profile', error);
             const message = error instanceof Error ? error.message : 'Failed to export profile.';
-            alert(message);
+            if (!wasToastHandled(error)) {
+                addToast(message, { type: 'error' });
+            }
+            markToastHandled(error);
         } finally {
             setActiveExportId(null);
         }

@@ -2,7 +2,7 @@
 import React from 'react';
 import { RadioStation, Genre } from '../types';
 import { EditIcon, TrashIcon } from './Icons';
-import { getStationLogoUrl } from '../stationLogos';
+import StationLogo from './StationLogo';
 
 interface StationCardProps {
   station: RadioStation;
@@ -14,7 +14,7 @@ interface StationCardProps {
 const StationCard: React.FC<StationCardProps> = ({ station, genre, onEdit, onDelete }) => {
   return (
     <div className="bg-brand-surface p-4 rounded-2xl shadow-sm border border-brand-border flex items-center space-x-4 hover:shadow-md transition-shadow">
-      <img src={getStationLogoUrl(station.logoUrl)} alt={station.name} className="w-20 h-20 rounded-lg object-cover" />
+      <StationLogo name={station.name} logoUrl={station.logoUrl} size={80} className="rounded-lg" />
       <div className="flex-grow">
         <h3 className="font-bold text-lg text-brand-dark">{station.name}</h3>
         <p className="text-sm text-brand-text-light">{station.description}</p>
