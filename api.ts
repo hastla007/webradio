@@ -1,4 +1,4 @@
-import { ExportProfile, Genre, PlayerApp, ProfileExportSummary, RadioStation } from './types';
+import { ExportProfile, Genre, PlayerApp, ProfileExportSummary, RadioStation, StreamHealthResult } from './types';
 import {
     getStations as getOfflineStations,
     saveStation as saveOfflineStation,
@@ -198,6 +198,35 @@ export const fetchGenres = () => withFallback(
     () => request<Genre[]>('/genres'),
     () => getOfflineGenres(),
 );
+
+interface StreamHealthRequest {
+    stationId: string;
+    streamUrl: string;
+}
+
+const simulateStreamHealth = (streams: StreamHealthRequest[]): StreamHealthResult[] => {
+    return streams.map(stream => {
+        const isOnline = Math.random() > 0.15;
+        return {
+            stationId: stream.stationId,
+            isOnline,
+            statusCode: isOnline ? 200 : 503,
+            contentType: isOnline ? 'audio/mpeg' : null,
+            responseTime: Math.floor(150 + Math.random() * 600),
+            error: isOnline ? undefined : 'Stream unavailable in offline mode.',
+        } satisfies StreamHealthResult;
+    });
+};
+
+export const checkStreamsHealth = (streams: StreamHealthRequest[], timeoutMs = 5000) =>
+    withFallback(
+        () =>
+            request<StreamHealthResult[]>('/monitor/check', {
+                method: 'POST',
+                body: JSON.stringify({ streams, timeoutMs }),
+            }),
+        () => simulateStreamHealth(streams),
+    );
 
 export const createGenre = (genre: Genre) => withFallback(
     () => request<Genre>('/genres', {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { RadioStation, Genre } from '../types';
 import { CloseIcon } from './Icons';
 import { getStationLogoUrl, isPlaceholderLogo, suggestLogoForStation } from '../stationLogos';
+import { useToast, wasToastHandled } from './ToastProvider';
 
 interface StationFormModalProps {
   station: RadioStation | null;
@@ -29,6 +30,7 @@ const defaultFormState = (firstGenreId: string | undefined): Omit<RadioStation, 
 const StationFormModal: React.FC<StationFormModalProps> = ({ station, genres, onSave, onClose }) => {
   const [formData, setFormData] = useState<Omit<RadioStation, 'id'>>(defaultFormState(genres[0]?.id));
   const [tagsInput, setTagsInput] = useState('');
+  const { addToast } = useToast();
 
   useEffect(() => {
     if (station) {
@@ -112,7 +114,7 @@ const StationFormModal: React.FC<StationFormModalProps> = ({ station, genres, on
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.streamUrl || !formData.genreId) {
-        alert("Please fill in all required fields: Name, Stream URL, and Genre.");
+        addToast('Please fill in all required fields: Name, Stream URL, and Genre.', { type: 'error' });
         return;
     }
     const newStation: RadioStation = {
@@ -123,6 +125,9 @@ const StationFormModal: React.FC<StationFormModalProps> = ({ station, genres, on
       await onSave(newStation);
     } catch (error) {
       console.error('Failed to save station', error);
+      if (!wasToastHandled(error)) {
+        addToast('Failed to save station.', { type: 'error' });
+      }
     }
   };
   
