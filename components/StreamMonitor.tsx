@@ -168,14 +168,6 @@ const StreamMonitor: React.FC<StreamMonitorProps> = ({ stations, settings, statu
                                     <p className="text-xl font-bold dark:text-white">{statusCodeLabel}</p>
                                 </div>
                                 <div className="bg-brand-surface dark:bg-brand-dark-surface p-4 rounded-2xl shadow-sm border border-brand-border dark:border-gray-700">
-                                    <h4 className="text-sm text-brand-text-light dark:text-gray-400">Response Time</h4>
-                                    <p className="text-xl font-bold dark:text-white">{responseTimeLabel}</p>
-                                </div>
-                                <div className="bg-brand-surface dark:bg-brand-dark-surface p-4 rounded-2xl shadow-sm border border-brand-border dark:border-gray-700">
-                                    <h4 className="text-sm text-brand-text-light dark:text-gray-400">HTTP Status</h4>
-                                    <p className="text-xl font-bold dark:text-white">{statusCodeLabel}</p>
-                                </div>
-                                <div className="bg-brand-surface dark:bg-brand-dark-surface p-4 rounded-2xl shadow-sm border border-brand-border dark:border-gray-700">
                                     <h4 className="text-sm text-brand-text-light dark:text-gray-400">Consecutive Fails</h4>
                                     <p className="text-xl font-bold dark:text-white">{selectedStatus.fails}</p>
                                 </div>
