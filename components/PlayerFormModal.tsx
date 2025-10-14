@@ -10,6 +10,8 @@ import {
   extractSlugFromPlacement,
   stripSlashes,
 } from './playerPlacementUtils';
+import { useToast, wasToastHandled } from './ToastProvider';
+import { generateId } from '../utils/id';
 
 interface PlayerFormModalProps {
   app: PlayerApp | null;
@@ -34,6 +36,7 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
   const [audioPrerollSlug, setAudioPrerollSlug] = useState(DEFAULT_PLACEMENT_SLUG);
   const [videoPrerollSlug, setVideoPrerollSlug] = useState(DEFAULT_PLACEMENT_SLUG);
   const [videoPrerollDefaultSize, setVideoPrerollDefaultSize] = useState('640x480');
+  const { addToast } = useToast();
 
   const togglePlatform = (option: string) => {
     setPlatforms(prev => {
@@ -113,7 +116,7 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!name.trim()) {
-      alert('Please provide a name for the app.');
+      addToast('Please provide a name for the app.', { type: 'error' });
       return;
     }
 
@@ -126,13 +129,13 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
     );
 
     if (sanitizedPlatforms.length === 0) {
-      alert('Select a platform for this app.');
+      addToast('Select a platform for this app.', { type: 'error' });
       return;
     }
 
     if (ftpEnabled) {
       if (!ftpServer.trim() || !ftpUsername.trim() || !ftpPassword.trim()) {
-        alert('Please provide FTP server, username, and password to enable FTP exports.');
+        addToast('Please provide FTP server, username, and password to enable FTP exports.', { type: 'error' });
         return;
       }
     }
@@ -140,7 +143,7 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
     const primaryPlatform = sanitizedPlatforms[0];
 
     const payload: PlayerApp = {
-      id: app?.id || `app-${Date.now()}`,
+      id: app?.id || generateId('app'),
       name,
       platforms: sanitizedPlatforms,
       platform: primaryPlatform,
@@ -166,6 +169,9 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
       onClose();
     } catch (error) {
       console.error('Failed to save app', error);
+      if (!wasToastHandled(error)) {
+        addToast('Failed to save app.', { type: 'error' });
+      }
     }
   };
 
