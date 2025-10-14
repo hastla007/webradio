@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  backend:
+    image: nowdoo/webradioadminpanel-backend:latest
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      API_PREFIX: /api
+      EXPORT_OUTPUT_DIR: /data/exports
+      API_DATA_PATH: /data/runtime-data.json
+    volumes:
+      # bind mount so exports are visible on host
+      - ./exports_data:/data
+    ports:
+      - "4000:4000"   # optional, handy for direct API tests
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/stations >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    image: nowdoo/webradioadminpanel:latest
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      # frontend expects same-origin /api; image should proxy /api -> backend:4000/api
+      VITE_API_BASE_URL: /api
+    ports:
+      - "3004:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped

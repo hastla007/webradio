@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      API_PREFIX: /api
+      EXPORT_OUTPUT_DIR: /data/exports
+      API_DATA_PATH: /data/runtime-data.json
+    volumes:
+      # bind-mount so you can see exported files on your disk
+      - ./exports_data:/data
+    ports:
+      - "4000:4000"   # optional; handy for direct API checks
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile       # frontend Dockerfile at repo root
+      args:
+        VITE_API_BASE_URL: /api    # frontend calls /api on same origin
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3004:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped

@@ -1,0 +1,5 @@
+{
+  "name": "WebRadio Admin Panel",
+  "description": "An admin panel for managing collections of web radio streams and their content, categorized by music genres. It allows for exporting the data as JSON files for use in other applications.",
+  "requestFramePermissions": []
+}
