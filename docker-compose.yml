@@ -1,39 +1,89 @@
 version: "3.9"
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: webradio-db
+    environment:
+      POSTGRES_DB: webradio
+      POSTGRES_USER: webradio
+      POSTGRES_PASSWORD: changeme123
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./server/init-db.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U webradio"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - webradio-network
+
   backend:
-    image: nowdoo/webradioadminpanel-backend:latest
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: webradio-backend
     environment:
       NODE_ENV: production
       PORT: 4000
       API_PREFIX: /api
+      # PostgreSQL connection
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: webradio
+      DB_USER: webradio
+      DB_PASSWORD: changeme123
+      # Export directory
       EXPORT_OUTPUT_DIR: /data/exports
-      API_DATA_PATH: /data/runtime-data.json
     volumes:
-      # bind mount so exports are visible on host
-      - ./exports_data:/data
+      - backend-data:/data
     ports:
-      - "4000:4000"   # optional, handy for direct API tests
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/stations >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/api/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - webradio-network
 
   frontend:
-    image: nowdoo/webradioadminpanel:latest
-    depends_on:
-      backend:
-        condition: service_healthy
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    container_name: webradio-frontend
     environment:
-      # frontend expects same-origin /api; image should proxy /api -> backend:4000/api
       VITE_API_BASE_URL: /api
     ports:
       - "3004:80"
+    depends_on:
+      backend:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - webradio-network
+
+volumes:
+  postgres-data:
+    driver: local
+  backend-data:
+    driver: local
+
+networks:
+  webradio-network:
+    driver: bridge
