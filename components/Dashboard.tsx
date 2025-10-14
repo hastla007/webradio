@@ -1,7 +1,7 @@
 // FIX: Removed invalid text from the start of the file that was causing parsing errors.
 import React from 'react';
 import { RadioStation, Genre, ExportProfile, MonitoringStatus } from '../types';
-import { getStationLogoUrl } from '../stationLogos';
+import StationLogo from './StationLogo';
 
 interface DashboardProps {
     stations: RadioStation[];
@@ -69,11 +69,7 @@ const Dashboard: React.FC<DashboardProps> = ({ stations, genres, profiles, monit
                     <ul className="space-y-3">
                         {stations.slice(-5).reverse().map(station => (
                             <li key={station.id} className="flex items-center space-x-4 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5">
-                                <img
-                                    src={getStationLogoUrl(station.logoUrl)}
-                                    alt={station.name}
-                                    className="w-10 h-10 rounded-md object-cover"
-                                />
+                                <StationLogo name={station.name} logoUrl={station.logoUrl} size={40} />
                                 <div>
                                     <p className="font-semibold dark:text-dark-text">{station.name}</p>
                                     <p className="text-sm text-brand-text-light dark:text-dark-text-light">
