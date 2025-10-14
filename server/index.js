@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const fssync = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { checkStreamHealth } = require('./monitor');
 
 const defaultData = require('../data/defaultData.json');
 const stationLogos = require('../data/stationLogos.json');
@@ -884,6 +885,42 @@ app.use(cors());
 app.use(express.json());
 
 let database;
+
+app.post(`${API_PREFIX}/monitor/check`, async (req, res) => {
+    const payload = req.body || {};
+    const streams = Array.isArray(payload.streams) ? payload.streams : [];
+    if (streams.length === 0) {
+        return res.status(400).json({ error: 'streams must be a non-empty array' });
+    }
+
+    const timeoutCandidate = Number(payload.timeoutMs);
+    const timeoutMs = Number.isFinite(timeoutCandidate) ? timeoutCandidate : undefined;
+
+    try {
+        const results = await Promise.all(
+            streams.map(async entry => {
+                const stationId = typeof entry.stationId === 'string' ? entry.stationId : String(entry.stationId ?? '').trim();
+                const streamUrl = typeof entry.streamUrl === 'string' ? entry.streamUrl : '';
+
+                if (!stationId) {
+                    return { stationId: '', isOnline: false, error: 'stationId is required' };
+                }
+
+                if (!streamUrl.trim()) {
+                    return { stationId, isOnline: false, error: 'streamUrl is required' };
+                }
+
+                const health = await checkStreamHealth(streamUrl, { timeoutMs });
+                return { stationId, ...health };
+            })
+        );
+
+        res.json(results);
+    } catch (error) {
+        console.error('Failed to perform stream health check', error);
+        res.status(500).json({ error: 'Failed to perform stream health check.' });
+    }
+});
 
 app.get(`${API_PREFIX}/health`, (req, res) => {
     res.json({ status: 'ok' });

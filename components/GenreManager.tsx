@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Genre } from '../types';
 import { PlusIcon, EditIcon, TrashIcon, CloseIcon } from './Icons';
+import { useToast, wasToastHandled } from './ToastProvider';
 
 interface GenreManagerProps {
     genres: Genre[];
@@ -14,6 +15,7 @@ const GenreManager: React.FC<GenreManagerProps> = ({ genres, onSaveGenre, onDele
     const [selectedSubGenres, setSelectedSubGenres] = useState<string[]>([]);
     const [newSubGenreInput, setNewSubGenreInput] = useState('');
     const [customSubGenres, setCustomSubGenres] = useState<string[]>([]);
+    const { addToast } = useToast();
     const availableSubGenres = useMemo(() => {
         const set = new Set<string>();
         genres.forEach(genre => {
@@ -57,10 +59,9 @@ const GenreManager: React.FC<GenreManagerProps> = ({ genres, onSaveGenre, onDele
     const handleSave = async () => {
         const trimmedName = newGenreName.trim();
         if (!trimmedName) {
-            alert('Genre name cannot be empty.');
+            addToast('Genre name cannot be empty.', { type: 'error' });
             return;
         }
-        const subGenres = parseSubGenres(newSubGenres);
         const genreToSave: Genre = {
             id: editingGenre ? editingGenre.id : `g${Date.now()}`,
             name: trimmedName,
@@ -75,6 +76,9 @@ const GenreManager: React.FC<GenreManagerProps> = ({ genres, onSaveGenre, onDele
             setNewSubGenreInput('');
         } catch (error) {
             console.error('Failed to save genre', error);
+            if (!wasToastHandled(error)) {
+                addToast('Failed to save genre.', { type: 'error' });
+            }
         }
     };
 
