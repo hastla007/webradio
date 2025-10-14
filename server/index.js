@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const fssync = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const zlib = require('node:zlib');
 const { checkStreamHealth } = require('./monitor');
 const { logger, getRecentLogEntries, subscribeToLogEntries } = require('./logger');
 
@@ -281,6 +282,144 @@ function normalizeProfiles(profiles) {
 async function ensureDirectory(directory) {
     await fs.mkdir(directory, { recursive: true });
     return directory;
+}
+
+const CRC32_TABLE = (() => {
+    const table = new Uint32Array(256);
+    for (let i = 0; i < 256; i += 1) {
+        let c = i;
+        for (let k = 0; k < 8; k += 1) {
+            c = (c & 1) ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+        }
+        table[i] = c >>> 0;
+    }
+    return table;
+})();
+
+function crc32(buffer) {
+    let crc = 0xffffffff;
+    for (let i = 0; i < buffer.length; i += 1) {
+        const byte = buffer[i];
+        crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+}
+
+function toDosDateTime(date) {
+    const year = Math.max(1980, date.getFullYear());
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const hours = date.getHours();
+    const minutes = date.getMinutes();
+    const seconds = Math.floor(date.getSeconds() / 2);
+    const dosTime = (hours << 11) | (minutes << 5) | seconds;
+    const dosDate = ((year - 1980) << 9) | (month << 5) | day;
+    return { time: dosTime, date: dosDate };
+}
+
+function createZipArchive(files) {
+    let localOffset = 0;
+    const localParts = [];
+    const centralParts = [];
+
+    for (const file of files) {
+        const normalizedName = String(file.fileName || '').replace(/\\/g, '/');
+        const nameBuffer = Buffer.from(normalizedName, 'utf8');
+        const sourceBuffer = Buffer.isBuffer(file.contents) ? file.contents : Buffer.from(file.contents);
+        const compressedBuffer = zlib.deflateRawSync(sourceBuffer);
+        const checksum = crc32(sourceBuffer);
+        const { time, date } = toDosDateTime(file.modifiedTime instanceof Date ? file.modifiedTime : new Date());
+
+        const localHeader = Buffer.alloc(30 + nameBuffer.length);
+        let pointer = 0;
+        localHeader.writeUInt32LE(0x04034b50, pointer);
+        pointer += 4;
+        localHeader.writeUInt16LE(20, pointer);
+        pointer += 2;
+        localHeader.writeUInt16LE(0, pointer);
+        pointer += 2;
+        localHeader.writeUInt16LE(8, pointer);
+        pointer += 2;
+        localHeader.writeUInt16LE(time, pointer);
+        pointer += 2;
+        localHeader.writeUInt16LE(date, pointer);
+        pointer += 2;
+        localHeader.writeUInt32LE(checksum, pointer);
+        pointer += 4;
+        localHeader.writeUInt32LE(compressedBuffer.length, pointer);
+        pointer += 4;
+        localHeader.writeUInt32LE(sourceBuffer.length, pointer);
+        pointer += 4;
+        localHeader.writeUInt16LE(nameBuffer.length, pointer);
+        pointer += 2;
+        localHeader.writeUInt16LE(0, pointer);
+        pointer += 2;
+        nameBuffer.copy(localHeader, pointer);
+
+        const centralHeader = Buffer.alloc(46 + nameBuffer.length);
+        pointer = 0;
+        centralHeader.writeUInt32LE(0x02014b50, pointer);
+        pointer += 4;
+        centralHeader.writeUInt16LE(20, pointer);
+        pointer += 2;
+        centralHeader.writeUInt16LE(20, pointer);
+        pointer += 2;
+        centralHeader.writeUInt16LE(0, pointer);
+        pointer += 2;
+        centralHeader.writeUInt16LE(8, pointer);
+        pointer += 2;
+        centralHeader.writeUInt16LE(time, pointer);
+        pointer += 2;
+        centralHeader.writeUInt16LE(date, pointer);
+        pointer += 2;
+        centralHeader.writeUInt32LE(checksum, pointer);
+        pointer += 4;
+        centralHeader.writeUInt32LE(compressedBuffer.length, pointer);
+        pointer += 4;
+        centralHeader.writeUInt32LE(sourceBuffer.length, pointer);
+        pointer += 4;
+        centralHeader.writeUInt16LE(nameBuffer.length, pointer);
+        pointer += 2;
+        centralHeader.writeUInt16LE(0, pointer);
+        pointer += 2;
+        centralHeader.writeUInt16LE(0, pointer);
+        pointer += 2;
+        centralHeader.writeUInt16LE(0, pointer);
+        pointer += 2;
+        centralHeader.writeUInt16LE(0, pointer);
+        pointer += 2;
+        centralHeader.writeUInt32LE(0, pointer);
+        pointer += 4;
+        centralHeader.writeUInt32LE(localOffset, pointer);
+        pointer += 4;
+        nameBuffer.copy(centralHeader, pointer);
+
+        localParts.push(localHeader, compressedBuffer);
+        centralParts.push(centralHeader);
+        localOffset += localHeader.length + compressedBuffer.length;
+    }
+
+    const centralDirectory = Buffer.concat(centralParts);
+    const localSection = Buffer.concat(localParts);
+    const endRecord = Buffer.alloc(22);
+    let pointer = 0;
+    endRecord.writeUInt32LE(0x06054b50, pointer);
+    pointer += 4;
+    endRecord.writeUInt16LE(0, pointer);
+    pointer += 2;
+    endRecord.writeUInt16LE(0, pointer);
+    pointer += 2;
+    endRecord.writeUInt16LE(files.length, pointer);
+    pointer += 2;
+    endRecord.writeUInt16LE(files.length, pointer);
+    pointer += 2;
+    endRecord.writeUInt32LE(centralDirectory.length, pointer);
+    pointer += 4;
+    endRecord.writeUInt32LE(localSection.length, pointer);
+    pointer += 4;
+    endRecord.writeUInt16LE(0, pointer);
+
+    return Buffer.concat([localSection, centralDirectory, endRecord]);
 }
 
 async function loadDataFromDisk() {
@@ -1393,6 +1532,71 @@ app.post(`${API_PREFIX}/export-profiles/:id/export`, async (req, res) => {
             'Failed to write export files'
         );
         res.status(500).json({ error: 'Failed to write export files' });
+    }
+});
+
+app.get(`${API_PREFIX}/export-profiles/:id/download`, async (req, res) => {
+    const { id } = req.params;
+    const profile = database.exportProfiles.find(profile => profile.id === id);
+    if (!profile) {
+        return res.status(404).json({ error: 'Export profile not found' });
+    }
+
+    try {
+        await ensureDirectory(EXPORT_OUTPUT_DIRECTORY);
+        const slug = slugifyName(profile.name, profile.id);
+        const entries = await fs.readdir(EXPORT_OUTPUT_DIRECTORY);
+        const files = [];
+
+        for (const fileName of entries) {
+            if (!fileName.toLowerCase().endsWith('.json')) continue;
+            if (!fileName.startsWith(`${slug}-`)) continue;
+            const filePath = path.join(EXPORT_OUTPUT_DIRECTORY, fileName);
+            try {
+                const stats = await fs.stat(filePath);
+                if (!stats.isFile()) {
+                    continue;
+                }
+                const contents = await fs.readFile(filePath);
+                files.push({ fileName, contents, modifiedTime: stats.mtime });
+            } catch (error) {
+                logger.warn(
+                    { err: error, category: 'errors', eventType: 'exports.download.read', path: filePath },
+                    'Failed to read export file for download.'
+                );
+            }
+        }
+
+        if (files.length === 0) {
+            return res.status(404).json({ error: 'No export files found for this profile.' });
+        }
+
+        const archiveBuffer = createZipArchive(files);
+
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename="${slug}.zip"`);
+        res.setHeader('Content-Length', String(archiveBuffer.length));
+        res.end(archiveBuffer);
+
+        logger.info(
+            {
+                category: 'exports',
+                eventType: 'exports.download',
+                profileId: profile.id,
+                fileCount: files.length,
+            },
+            'Export profile files downloaded.'
+        );
+    } catch (error) {
+        logger.error(
+            { err: error, category: 'errors', eventType: 'exports.download', profileId: profile.id },
+            'Failed to prepare export download.'
+        );
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to prepare export download.' });
+        } else {
+            res.end();
+        }
     }
 });
 
