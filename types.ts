@@ -118,6 +118,11 @@ export interface MonitoringStatus {
   status: 'online' | 'offline' | 'unknown';
   history: number[]; // 1 for success, 0 for failure
   fails: number;
+  responseTime?: number;
+  statusCode?: number;
+  contentType?: string | null;
+  lastCheckedAt?: number;
+  error?: string;
 }
 
 export interface MonitoringSettings {
@@ -132,4 +137,32 @@ export interface MonitoringEvent {
   message: string;
   timestamp: number;
   type: 'success' | 'error' | 'info';
+}
+
+export interface StreamHealthResult {
+  stationId: string;
+  isOnline: boolean;
+  statusCode?: number;
+  contentType?: string | null;
+  responseTime?: number;
+  error?: string;
+}
+
+export type LogCategory =
+  | 'system'
+  | 'errors'
+  | 'stations'
+  | 'exports'
+  | 'monitoring'
+  | 'players'
+  | 'genres';
+
+export interface LogEntry {
+  id: string;
+  sequence: number;
+  timestamp: number;
+  level: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+  category: LogCategory | string;
+  message: string;
+  details: Record<string, unknown>;
 }
