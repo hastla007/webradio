@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Genre } from '../types';
 import { PlusIcon, EditIcon, TrashIcon, CloseIcon } from './Icons';
 import { useToast, wasToastHandled } from './ToastProvider';
+import { generateId } from '../utils/id';
 
 interface GenreManagerProps {
     genres: Genre[];
@@ -63,7 +64,7 @@ const GenreManager: React.FC<GenreManagerProps> = ({ genres, onSaveGenre, onDele
             return;
         }
         const genreToSave: Genre = {
-            id: editingGenre ? editingGenre.id : `g${Date.now()}`,
+            id: editingGenre ? editingGenre.id : generateId('genre'),
             name: trimmedName,
             subGenres: selectedSubGenres,
         };

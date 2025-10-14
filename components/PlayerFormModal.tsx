@@ -11,6 +11,7 @@ import {
   stripSlashes,
 } from './playerPlacementUtils';
 import { useToast, wasToastHandled } from './ToastProvider';
+import { generateId } from '../utils/id';
 
 interface PlayerFormModalProps {
   app: PlayerApp | null;
@@ -142,7 +143,7 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
     const primaryPlatform = sanitizedPlatforms[0];
 
     const payload: PlayerApp = {
-      id: app?.id || `app-${Date.now()}`,
+      id: app?.id || generateId('app'),
       name,
       platforms: sanitizedPlatforms,
       platform: primaryPlatform,

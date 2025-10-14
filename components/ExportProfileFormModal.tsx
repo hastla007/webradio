@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ExportProfile, Genre, RadioStation, AutoExportConfig, PlayerApp } from '../types';
 import { CloseIcon } from './Icons';
 import { useToast, wasToastHandled } from './ToastProvider';
+import { generateId } from '../utils/id';
 
 interface ExportProfileFormModalProps {
   profile: ExportProfile | null;
@@ -121,7 +122,7 @@ const ExportProfileFormModal: React.FC<ExportProfileFormModalProps> = ({
     }
 
     const newProfile: ExportProfile = {
-      id: profile?.id || `ep${Date.now()}`,
+      id: profile?.id || generateId('export-profile'),
       name,
       genreIds: selectedGenreIds,
       stationIds: selectedStationIds,

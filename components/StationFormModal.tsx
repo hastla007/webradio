@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { RadioStation, Genre } from '../types';
 import { CloseIcon } from './Icons';
-import { getStationLogoUrl, isPlaceholderLogo, suggestLogoForStation } from '../stationLogos';
+import { isPlaceholderLogo, suggestLogoForStation } from '../stationLogos';
 import { useToast, wasToastHandled } from './ToastProvider';
+import StationLogo from './StationLogo';
+import { generateId, generateSeed } from '../utils/id';
 
 interface StationFormModalProps {
   station: RadioStation | null;
@@ -118,7 +120,7 @@ const StationFormModal: React.FC<StationFormModalProps> = ({ station, genres, on
         return;
     }
     const newStation: RadioStation = {
-      id: station?.id || `s${Date.now()}`,
+      id: station?.id || generateId('station'),
       ...formData,
     };
     try {
@@ -133,7 +135,7 @@ const StationFormModal: React.FC<StationFormModalProps> = ({ station, genres, on
   
   const handleGenerateLogo = () => {
     const suggestion = suggestLogoForStation(formData.name);
-    const fallback = suggestion || `https://picsum.photos/seed/${Date.now()}/100`;
+    const fallback = suggestion || `https://picsum.photos/seed/${generateSeed('station-logo')}/100`;
     setFormData(prev => ({ ...prev, logoUrl: fallback }));
   };
 
@@ -186,7 +188,7 @@ const StationFormModal: React.FC<StationFormModalProps> = ({ station, genres, on
                     <label htmlFor="logoUrl" className="block text-sm font-medium text-brand-text-light mb-1">Logo URL</label>
                     <input type="url" name="logoUrl" id="logoUrl" value={formData.logoUrl} onChange={handleChange} className="w-full px-3 py-2 border border-brand-border rounded-lg focus:ring-2 focus:ring-brand-primary focus:outline-none"/>
                 </div>
-                <img src={getStationLogoUrl(formData.logoUrl)} alt="logo preview" className="w-12 h-12 rounded-md object-cover" />
+                <StationLogo name={formData.name || 'Station logo preview'} logoUrl={formData.logoUrl} size={48} />
                 <button type="button" onClick={handleGenerateLogo} className="px-4 py-2 border border-brand-border rounded-lg text-sm font-semibold hover:bg-gray-100 transition-colors">Generate</button>
             </div>
             <div>

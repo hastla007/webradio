@@ -10,6 +10,7 @@ import LogViewer from './components/LogViewer';
 import ListenPage from './components/ListenPage';
 import SettingsPage from './components/SettingsPage';
 import { useToast, markToastHandled } from './components/ToastProvider';
+import { useConfirm } from './components/ConfirmProvider';
 import {
     RadioStation,
     Genre,
@@ -42,6 +43,7 @@ import {
     resetApiStatus,
     checkStreamsHealth,
 } from './api';
+import { describeOfflineResult, describeOnlineResult } from './utils/monitoring';
 
 export type View =
     | 'dashboard'
@@ -54,64 +56,9 @@ export type View =
     | 'logs'
     | 'settings';
 
-const describeOnlineResult = (result?: StreamHealthResult) => {
-    if (!result) {
-        return 'online';
-    }
-
-    const parts: string[] = [];
-    if (typeof result.statusCode === 'number') {
-        parts.push(`status ${result.statusCode}`);
-    }
-    if (typeof result.responseTime === 'number') {
-        parts.push(`${result.responseTime}ms`);
-    }
-    return parts.length > 0 ? parts.join(', ') : 'online';
-};
-
-const describeOfflineResult = (result?: StreamHealthResult) => {
-    if (!result) {
-        return 'Stream unreachable';
-    }
-    if (result.error) {
-        return `Stream offline: ${result.error}`;
-    }
-    if (typeof result.statusCode === 'number') {
-        return `Stream offline (status ${result.statusCode})`;
-    }
-    return 'Stream offline';
-};
-
-const describeOnlineResult = (result?: StreamHealthResult) => {
-    if (!result) {
-        return 'online';
-    }
-
-    const parts: string[] = [];
-    if (typeof result.statusCode === 'number') {
-        parts.push(`status ${result.statusCode}`);
-    }
-    if (typeof result.responseTime === 'number') {
-        parts.push(`${result.responseTime}ms`);
-    }
-    return parts.length > 0 ? parts.join(', ') : 'online';
-};
-
-const describeOfflineResult = (result?: StreamHealthResult) => {
-    if (!result) {
-        return 'Stream unreachable';
-    }
-    if (result.error) {
-        return `Stream offline: ${result.error}`;
-    }
-    if (typeof result.statusCode === 'number') {
-        return `Stream offline (status ${result.statusCode})`;
-    }
-    return 'Stream offline';
-};
-
 const App: React.FC = () => {
     const { addToast } = useToast();
+    const { confirm } = useConfirm();
     const [currentView, setCurrentView] = useState<View>('dashboard');
     const [stations, setStations] = useState<RadioStation[]>([]);
     const [genres, setGenres] = useState<Genre[]>([]);
@@ -210,7 +157,17 @@ const App: React.FC = () => {
     };
 
     const handleDeleteStation = async (stationId: string) => {
-        if (!window.confirm('Are you sure you want to delete this station?')) {
+        const station = stations.find(s => s.id === stationId);
+        const confirmed = await confirm({
+            title: 'Delete station',
+            description: station
+                ? `Are you sure you want to delete ${station.name}? This action cannot be undone.`
+                : 'Are you sure you want to delete this station? This action cannot be undone.',
+            confirmLabel: 'Delete station',
+            cancelLabel: 'Keep station',
+            tone: 'danger',
+        });
+        if (!confirmed) {
             return;
         }
 
@@ -261,7 +218,17 @@ const App: React.FC = () => {
     };
 
     const handleDeleteGenre = async (genreId: string) => {
-        if (!window.confirm('Are you sure you want to delete this genre?')) {
+        const genre = genres.find(g => g.id === genreId);
+        const confirmed = await confirm({
+            title: 'Delete genre',
+            description: genre
+                ? `Delete the ${genre.name} genre and remove it from associated stations and export profiles?`
+                : 'Delete this genre and remove it from associated stations and export profiles?',
+            confirmLabel: 'Delete genre',
+            cancelLabel: 'Keep genre',
+            tone: 'danger',
+        });
+        if (!confirmed) {
             return;
         }
 
@@ -334,7 +301,17 @@ const App: React.FC = () => {
     };
 
     const handleDeleteProfile = async (profileId: string) => {
-        if (!window.confirm('Are you sure you want to delete this export profile?')) {
+        const profile = profiles.find(p => p.id === profileId);
+        const confirmed = await confirm({
+            title: 'Delete export profile',
+            description: profile
+                ? `Delete the export profile “${profile.name}”? Any linked automation will stop running.`
+                : 'Delete this export profile? Any linked automation will stop running.',
+            confirmLabel: 'Delete profile',
+            cancelLabel: 'Keep profile',
+            tone: 'danger',
+        });
+        if (!confirmed) {
             return;
         }
 
@@ -374,7 +351,17 @@ const App: React.FC = () => {
     };
 
     const handleDeletePlayerApp = async (appId: string) => {
-        if (!window.confirm('Are you sure you want to delete this app/player?')) {
+        const app = playerApps.find(p => p.id === appId);
+        const confirmed = await confirm({
+            title: 'Delete player',
+            description: app
+                ? `Delete the player “${app.name}”? Linked profiles will lose their assignments.`
+                : 'Delete this player? Linked profiles will lose their assignments.',
+            confirmLabel: 'Delete player',
+            cancelLabel: 'Keep player',
+            tone: 'danger',
+        });
+        if (!confirmed) {
             return;
         }
 

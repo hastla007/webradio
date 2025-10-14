@@ -2,8 +2,12 @@ import React, { useState, useMemo, useRef } from 'react';
 import { RadioStation, Genre, MonitoringStatus, ImaAdType } from '../types';
 import StationFormModal from './StationFormModal';
 import { PlusIcon, EditIcon, TrashIcon, UploadIcon } from './Icons';
-import { getStationLogoUrl, normalizeStationLogo } from '../stationLogos';
+import { normalizeStationLogo } from '../stationLogos';
 import { useToast, wasToastHandled, markToastHandled } from './ToastProvider';
+import UptimeBar from './UptimeBar';
+import StatusBadge from './StatusBadge';
+import StationLogo from './StationLogo';
+import { generateId, generateSeed } from '../utils/id';
 
 interface StationManagerProps {
     stations: RadioStation[];
@@ -13,26 +17,6 @@ interface StationManagerProps {
     onDeleteStation: (stationId: string) => Promise<void> | void;
     onImportStations: (stations: RadioStation[]) => Promise<void> | void;
 }
-
-const UptimeBar: React.FC<{ history: number[] | undefined }> = ({ history = [] }) => {
-    const barCount = 40;
-    const bars = [...history].reverse().slice(0, barCount);
-    while (bars.length < barCount) {
-        bars.push(-1);
-    }
-
-    return (
-        <div className="flex items-center gap-px h-5">
-            {bars.map((result, index) => {
-                let colorClass = 'bg-gray-200 dark:bg-gray-600';
-                if (result === 1) colorClass = 'bg-green-500';
-                if (result === 0) colorClass = 'bg-red-500';
-                return <div key={index} className={`w-1.5 h-full rounded-sm ${colorClass}`}></div>;
-            })}
-        </div>
-    );
-};
-
 
 const StationManager: React.FC<StationManagerProps> = ({ stations, genres, monitoringStatus, onSaveStation, onDeleteStation, onImportStations }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -224,14 +208,17 @@ const StationManager: React.FC<StationManagerProps> = ({ stations, genres, monit
             throw new Error('Genre not found in your catalogue.');
         }
 
-        const idValue = raw.id ?? `import-${Date.now()}-${index}`;
+        const idValue =
+            typeof raw.id === 'string' && raw.id.trim().length > 0
+                ? raw.id.trim()
+                : generateId(`import-${index}`);
         const description = typeof raw.description === 'string' ? raw.description : '';
         const logoUrl =
             typeof raw.logoUrl === 'string' && raw.logoUrl.trim()
                 ? raw.logoUrl.trim()
                 : typeof raw.logo === 'string' && raw.logo.trim()
                 ? raw.logo.trim()
-                : `https://picsum.photos/seed/${Date.now() + index}/100`;
+                : `https://picsum.photos/seed/${generateSeed('station-' + index)}/100`;
         const subGenres = parseSubGenres(genreId, raw.subGenres ?? raw.subgenres ?? []);
         const bitrate = Number(raw.bitrate);
         const language = typeof raw.language === 'string' && raw.language.trim() ? raw.language.trim() : 'en';
@@ -409,11 +396,7 @@ const StationManager: React.FC<StationManagerProps> = ({ stations, genres, monit
                                 >
                                     <td className="p-3 align-middle">
                                         <div className="flex items-center space-x-3">
-                                            <img
-                                                src={getStationLogoUrl(station.logoUrl)}
-                                                alt={station.name}
-                                                className="w-10 h-10 rounded-md object-cover"
-                                            />
+                                            <StationLogo name={station.name} logoUrl={station.logoUrl} size={40} />
                                             <span className="font-medium text-brand-dark dark:text-dark-text flex items-center gap-2">
                                                 {station.name}
                                                 {station.isFavorite && (
@@ -423,9 +406,11 @@ const StationManager: React.FC<StationManagerProps> = ({ stations, genres, monit
                                         </div>
                                     </td>
                                     <td className="p-3 align-middle">
-                                        <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${station.isActive ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300'}`}>
-                                            {station.isActive ? 'Active' : 'Deactivated'}
-                                        </span>
+                                        <StatusBadge
+                                            status={station.isActive ? 'active' : 'inactive'}
+                                            label={station.isActive ? 'Active' : 'Deactivated'}
+                                            size="sm"
+                                        />
                                     </td>
                                     <td className="p-3 align-middle text-brand-text-light dark:text-dark-text-light">
                                         <div>{genres.find(g => g.id === station.genreId)?.name || 'N/A'}</div>
@@ -457,7 +442,7 @@ const StationManager: React.FC<StationManagerProps> = ({ stations, genres, monit
                                         </div>
                                     </td>
                                     <td className="p-3 align-middle">
-                                        <UptimeBar history={monitoringStatus[station.id]?.history} />
+                                        <UptimeBar history={monitoringStatus[station.id]?.history} barCount={40} className="h-5" />
                                     </td>
                                     <td className="p-3 align-middle text-right">
                                         <div className="inline-flex space-x-2">
