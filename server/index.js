@@ -7,6 +7,8 @@ const { randomUUID } = require('node:crypto');
 const zlib = require('node:zlib');
 const { checkStreamHealth } = require('./monitor');
 const { logger, getRecentLogEntries, subscribeToLogEntries } = require('./logger');
+const { encryptSecret, decryptSecret, isEncryptedSecret } = require('./secrets');
+const { sanitizeTimeout, normalizeProtocol, testFtpConnection, uploadFiles } = require('./ftp');
 
 const defaultData = require('../data/defaultData.json');
 const stationLogos = require('../data/stationLogos.json');
@@ -229,6 +231,14 @@ function normalizePlayerApp(app) {
         uniquePlatforms.push('web');
     }
     const primaryPlatform = uniquePlatforms[0];
+    const ftpServer = String(app.ftpServer || app.ftpHost || '').trim();
+    const ftpUsername = String(app.ftpUsername || '').trim();
+    const ftpPasswordRaw = typeof app.ftpPassword === 'string' ? app.ftpPassword : '';
+    const decryptedPassword = decryptSecret(ftpPasswordRaw);
+    const ftpPassword = typeof decryptedPassword === 'string' ? decryptedPassword.trim() : '';
+    const ftpProtocol = normalizeProtocol(app.ftpProtocol, ftpServer);
+    const ftpTimeout = sanitizeTimeout(app.ftpTimeout);
+
     return {
         id,
         name: String(app.name || '').trim(),
@@ -238,9 +248,11 @@ function normalizePlayerApp(app) {
         contactEmail: String(app.contactEmail || '').trim(),
         notes: String(app.notes || '').trim(),
         ftpEnabled: app.ftpEnabled === true,
-        ftpServer: String(app.ftpServer || app.ftpHost || '').trim(),
-        ftpUsername: String(app.ftpUsername || '').trim(),
-        ftpPassword: String(app.ftpPassword || '').trim(),
+        ftpServer,
+        ftpUsername,
+        ftpPassword,
+        ftpProtocol,
+        ftpTimeout,
         networkCode: String(app.networkCode || '').trim(),
         imaEnabled: app.imaEnabled !== false,
         videoPrerollDefaultSize: String(app.videoPrerollDefaultSize || '640x480').trim() || '640x480',
@@ -441,8 +453,21 @@ async function loadDataFromDisk() {
 
 async function saveDataToDisk(data) {
     try {
+        const serialized = {
+            ...data,
+            playerApps: Array.isArray(data.playerApps)
+                ? data.playerApps.map(app => {
+                      const password = typeof app.ftpPassword === 'string' ? app.ftpPassword : '';
+                      const storedPassword = password && !isEncryptedSecret(password) ? encryptSecret(password) : password;
+                      return {
+                          ...app,
+                          ftpPassword: storedPassword,
+                      };
+                  })
+                : [],
+        };
         await ensureDirectory(path.dirname(DATA_FILE_PATH));
-        await fs.writeFile(DATA_FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
+        await fs.writeFile(DATA_FILE_PATH, JSON.stringify(serialized, null, 2), 'utf8');
     } catch (error) {
         logger.error(
             { err: error, category: 'errors', eventType: 'storage.save', path: DATA_FILE_PATH },
@@ -1052,6 +1077,27 @@ async function writeExportFiles(profile, exportContext) {
     return targets;
 }
 
+function buildFtpSettingsFromPlayer(player) {
+    if (!player || player.ftpEnabled !== true) {
+        return null;
+    }
+
+    const server = String(player.ftpServer || '').trim();
+    const username = String(player.ftpUsername || '').trim();
+    const password = typeof player.ftpPassword === 'string' ? player.ftpPassword : '';
+    if (!server || !username || !password) {
+        return null;
+    }
+
+    return {
+        server,
+        protocol: player.ftpProtocol,
+        username,
+        password,
+        timeoutMs: sanitizeTimeout(player.ftpTimeout),
+    };
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -1354,6 +1400,38 @@ app.get(`${API_PREFIX}/player-apps`, (req, res) => {
     res.json(database.playerApps);
 });
 
+app.post(`${API_PREFIX}/player-apps/test-ftp`, async (req, res) => {
+    const payload = req.body || {};
+    const ftpServer = typeof payload.ftpServer === 'string' ? payload.ftpServer.trim() : '';
+    const ftpUsername = typeof payload.ftpUsername === 'string' ? payload.ftpUsername.trim() : '';
+    const ftpPassword = typeof payload.ftpPassword === 'string' ? payload.ftpPassword : '';
+
+    if (!ftpServer || !ftpUsername || !ftpPassword) {
+        return res.status(400).json({ error: 'FTP server, username, and password are required.' });
+    }
+
+    try {
+        await testFtpConnection({
+            server: ftpServer,
+            protocol: payload.ftpProtocol,
+            username: ftpUsername,
+            password: ftpPassword,
+            timeoutMs: sanitizeTimeout(payload.ftpTimeout),
+        });
+        res.json({ success: true });
+        logger.info(
+            { category: 'players', eventType: 'players.ftp.test', server: ftpServer },
+            'FTP credentials verified successfully.'
+        );
+    } catch (error) {
+        logger.warn(
+            { err: error, category: 'players', eventType: 'players.ftp.test', server: ftpServer },
+            'FTP credential verification failed.'
+        );
+        res.status(400).json({ error: error?.message || 'Unable to verify FTP credentials.' });
+    }
+});
+
 app.post(`${API_PREFIX}/player-apps`, async (req, res) => {
     const normalized = normalizePlayerApp(req.body || {});
     if (!normalized.name) {
@@ -1501,7 +1579,37 @@ app.post(`${API_PREFIX}/export-profiles/:id/export`, async (req, res) => {
         return res.status(400).json({ error: 'This export profile does not include any active stations to export.' });
     }
     try {
+        const remoteSubdirectory = slugifyName(profile.name, profile.id);
         const files = await writeExportFiles(profile, exportContext);
+        const ftpSettings = buildFtpSettingsFromPlayer(exportContext.player);
+        let ftpUploadedSet = new Set();
+
+        if (ftpSettings) {
+            try {
+                const uploadedNames = await uploadFiles(ftpSettings, files, { remoteSubdirectory });
+                ftpUploadedSet = new Set(uploadedNames);
+                logger.info(
+                    {
+                        category: 'exports',
+                        eventType: 'exports.ftp.upload',
+                        profileId: profile.id,
+                        uploadedCount: uploadedNames.length,
+                    },
+                    'Uploaded export files via FTP.'
+                );
+            } catch (ftpError) {
+                logger.error(
+                    {
+                        err: ftpError,
+                        category: 'errors',
+                        eventType: 'exports.ftp.upload',
+                        profileId: profile.id,
+                    },
+                    'Failed to upload export files via FTP.'
+                );
+            }
+        }
+
         const summary = {
             profileId: profile.id,
             profileName: profile.name,
@@ -1512,7 +1620,7 @@ app.post(`${API_PREFIX}/export-profiles/:id/export`, async (req, res) => {
                 fileName: file.fileName,
                 outputPath: file.outputPath,
                 stationCount: exportContext.stationCount,
-                ftpUploaded: Boolean(file.ftpUploaded),
+                ftpUploaded: ftpUploadedSet.has(file.fileName),
             })),
         };
         res.json(summary);

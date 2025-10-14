@@ -43,6 +43,8 @@ export interface PlayerApp {
   ftpServer: string;
   ftpUsername: string;
   ftpPassword: string;
+  ftpProtocol: 'ftp' | 'ftps' | 'sftp';
+  ftpTimeout: number;
   networkCode: string;
   imaEnabled: boolean;
   videoPrerollDefaultSize: string;

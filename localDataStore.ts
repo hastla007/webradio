@@ -315,6 +315,10 @@ function normalizePlayerApp(app: PlayerApp): PlayerApp {
     }
     const primaryPlatform = uniquePlatforms[0];
 
+    const ftpProtocol = (typeof app.ftpProtocol === 'string' ? app.ftpProtocol : 'ftp') as PlayerApp['ftpProtocol'];
+    const ftpTimeoutValue = Number(app.ftpTimeout);
+    const ftpTimeout = Number.isFinite(ftpTimeoutValue) && ftpTimeoutValue > 0 ? ftpTimeoutValue : 30000;
+
     return {
         id: app.id,
         name: app.name,
@@ -327,6 +331,8 @@ function normalizePlayerApp(app: PlayerApp): PlayerApp {
         ftpServer: app.ftpServer || '',
         ftpUsername: app.ftpUsername || '',
         ftpPassword: app.ftpPassword || '',
+        ftpProtocol,
+        ftpTimeout,
         networkCode: app.networkCode || '',
         imaEnabled: app.imaEnabled !== false,
         videoPrerollDefaultSize: (app.videoPrerollDefaultSize || '640x480').trim() || '640x480',

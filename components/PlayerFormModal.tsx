@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { PlayerApp } from '../types';
+import { testFtpCredentials } from '../api';
 import { CloseIcon } from './Icons';
 import {
   AUDIO_PREROLL_SUFFIX,
@@ -31,6 +32,9 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
   const [ftpServer, setFtpServer] = useState('');
   const [ftpUsername, setFtpUsername] = useState('');
   const [ftpPassword, setFtpPassword] = useState('');
+  const [ftpProtocol, setFtpProtocol] = useState<'ftp' | 'ftps' | 'sftp'>('ftp');
+  const [ftpTimeoutSeconds, setFtpTimeoutSeconds] = useState('30');
+  const [isTestingFtp, setIsTestingFtp] = useState(false);
   const [networkCode, setNetworkCode] = useState('');
   const [imaEnabled, setImaEnabled] = useState(true);
   const [audioPrerollSlug, setAudioPrerollSlug] = useState(DEFAULT_PLACEMENT_SLUG);
@@ -65,6 +69,8 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
       setFtpServer(app.ftpServer || '');
       setFtpUsername(app.ftpUsername || '');
       setFtpPassword(app.ftpPassword || '');
+      setFtpProtocol(app.ftpProtocol || 'ftp');
+      setFtpTimeoutSeconds(String(Math.max(1, Math.round((app.ftpTimeout ?? 30000) / 1000))));
       const inferredNetworkCode =
         app.networkCode ||
         extractNetworkFromPlacement(app.placements?.preroll, [AUDIO_PREROLL_SUFFIX, 'preroll']) ||
@@ -91,6 +97,8 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
       setFtpServer('');
       setFtpUsername('');
       setFtpPassword('');
+      setFtpProtocol('ftp');
+      setFtpTimeoutSeconds('30');
       setNetworkCode('');
       setImaEnabled(true);
       setAudioPrerollSlug(DEFAULT_PLACEMENT_SLUG);
@@ -112,6 +120,15 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
   const isVideoAdFormatDisabled = adConfigurationDisabled || !isVideoSlugProvided;
 
   const hasPlatformSelection = platforms.length > 0;
+
+  const computeFtpTimeoutMs = () => {
+    const seconds = Number(ftpTimeoutSeconds);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      return 30000;
+    }
+    const clampedSeconds = Math.min(Math.max(Math.round(seconds), 1), 600);
+    return clampedSeconds * 1000;
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -154,6 +171,8 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
       ftpServer: ftpServer.trim(),
       ftpUsername: ftpUsername.trim(),
       ftpPassword: ftpPassword.trim(),
+      ftpProtocol,
+      ftpTimeout: computeFtpTimeoutMs(),
       networkCode: sanitizedNetworkCode,
       imaEnabled,
       videoPrerollDefaultSize: sanitizedVideoDefaultSize,
@@ -172,6 +191,36 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
       if (!wasToastHandled(error)) {
         addToast('Failed to save app.', { type: 'error' });
       }
+    }
+  };
+
+  const handleTestFtp = async () => {
+    if (!ftpEnabled) {
+      addToast('Enable FTP delivery to test credentials.', { type: 'info' });
+      return;
+    }
+
+    if (!ftpServer.trim() || !ftpUsername.trim() || !ftpPassword.trim()) {
+      addToast('Provide FTP server, username, and password before testing.', { type: 'error' });
+      return;
+    }
+
+    setIsTestingFtp(true);
+    try {
+      await testFtpCredentials({
+        ftpServer: ftpServer.trim(),
+        ftpUsername: ftpUsername.trim(),
+        ftpPassword,
+        ftpProtocol,
+        ftpTimeout: computeFtpTimeoutMs(),
+      });
+      addToast('Connection successful! Credentials are valid.', { type: 'success' });
+    } catch (error) {
+      console.error('FTP credentials test failed', error);
+      const message = error instanceof Error ? error.message : 'Unable to verify FTP credentials.';
+      addToast(message, { type: 'error' });
+    } finally {
+      setIsTestingFtp(false);
     }
   };
 
@@ -284,6 +333,19 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
                       />
                     </div>
                     <div>
+                      <label htmlFor="ftp-protocol" className="block text-sm font-medium text-brand-text-light mb-1">Protocol</label>
+                      <select
+                        id="ftp-protocol"
+                        value={ftpProtocol}
+                        onChange={(event) => setFtpProtocol(event.target.value as typeof ftpProtocol)}
+                        className="w-full px-3 py-2 border border-brand-border rounded-lg focus:ring-2 focus:ring-brand-primary focus:outline-none bg-white"
+                      >
+                        <option value="ftp">FTP</option>
+                        <option value="ftps">FTPS (TLS)</option>
+                        <option value="sftp">SFTP (SSH)</option>
+                      </select>
+                    </div>
+                    <div>
                       <label htmlFor="ftp-username" className="block text-sm font-medium text-brand-text-light mb-1">FTP username</label>
                       <input
                         id="ftp-username"
@@ -304,9 +366,32 @@ const PlayerFormModal: React.FC<PlayerFormModalProps> = ({ app, onSave, onClose 
                         className="w-full px-3 py-2 border border-brand-border rounded-lg focus:ring-2 focus:ring-brand-primary focus:outline-none"
                       />
                     </div>
-                    <p className="sm:col-span-2 text-xs text-brand-text-light">
-                      When enabled, auto-exports linked to this app will also push the generated JSON to the configured FTP endpoint.
-                    </p>
+                    <div>
+                      <label htmlFor="ftp-timeout" className="block text-sm font-medium text-brand-text-light mb-1">Connection timeout (seconds)</label>
+                      <input
+                        id="ftp-timeout"
+                        type="number"
+                        min={1}
+                        max={600}
+                        value={ftpTimeoutSeconds}
+                        onChange={(event) => setFtpTimeoutSeconds(event.target.value)}
+                        className="w-full px-3 py-2 border border-brand-border rounded-lg focus:ring-2 focus:ring-brand-primary focus:outline-none"
+                      />
+                      <p className="mt-1 text-xs text-brand-text-light">We will fail the upload if the server does not respond before this limit.</p>
+                    </div>
+                    <div className="sm:col-span-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs text-brand-text-light">
+                        When enabled, auto-exports linked to this app will also push the generated JSON to the configured FTP endpoint.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleTestFtp}
+                        disabled={isTestingFtp}
+                        className="inline-flex items-center justify-center rounded-lg bg-brand-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary/90 disabled:cursor-not-allowed disabled:bg-brand-border"
+                      >
+                        {isTestingFtp ? 'Testing…' : 'Test credentials'}
+                      </button>
+                    </div>
                   </div>
                 )}
               </fieldset>

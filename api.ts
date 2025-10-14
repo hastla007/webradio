@@ -188,6 +188,20 @@ export const resetApiStatus = () => {
     setOfflineMode(false);
 };
 
+export interface TestFtpCredentialsPayload {
+    ftpServer: string;
+    ftpUsername: string;
+    ftpPassword: string;
+    ftpProtocol: 'ftp' | 'ftps' | 'sftp';
+    ftpTimeout: number;
+}
+
+export const testFtpCredentials = (payload: TestFtpCredentialsPayload) =>
+    request<{ success: boolean }>('/player-apps/test-ftp', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+
 export const fetchStations = () =>
     withFallback(
         () => request<RadioStation[]>('/stations').then(normalizeStationLogos),
