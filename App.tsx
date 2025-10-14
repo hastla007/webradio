@@ -82,6 +82,34 @@ const describeOfflineResult = (result?: StreamHealthResult) => {
     return 'Stream offline';
 };
 
+const describeOnlineResult = (result?: StreamHealthResult) => {
+    if (!result) {
+        return 'online';
+    }
+
+    const parts: string[] = [];
+    if (typeof result.statusCode === 'number') {
+        parts.push(`status ${result.statusCode}`);
+    }
+    if (typeof result.responseTime === 'number') {
+        parts.push(`${result.responseTime}ms`);
+    }
+    return parts.length > 0 ? parts.join(', ') : 'online';
+};
+
+const describeOfflineResult = (result?: StreamHealthResult) => {
+    if (!result) {
+        return 'Stream unreachable';
+    }
+    if (result.error) {
+        return `Stream offline: ${result.error}`;
+    }
+    if (typeof result.statusCode === 'number') {
+        return `Stream offline (status ${result.statusCode})`;
+    }
+    return 'Stream offline';
+};
+
 const App: React.FC = () => {
     const { addToast } = useToast();
     const [currentView, setCurrentView] = useState<View>('dashboard');
