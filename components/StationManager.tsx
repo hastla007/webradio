@@ -3,6 +3,7 @@ import { RadioStation, Genre, MonitoringStatus, ImaAdType } from '../types';
 import StationFormModal from './StationFormModal';
 import { PlusIcon, EditIcon, TrashIcon, UploadIcon } from './Icons';
 import { getStationLogoUrl, normalizeStationLogo } from '../stationLogos';
+import { useToast, wasToastHandled, markToastHandled } from './ToastProvider';
 
 interface StationManagerProps {
     stations: RadioStation[];
@@ -40,6 +41,7 @@ const StationManager: React.FC<StationManagerProps> = ({ stations, genres, monit
     const [filterGenre, setFilterGenre] = useState<string>('all');
     const [isImporting, setIsImporting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const { addToast } = useToast();
 
     const handleAddNew = () => {
         setEditingStation(null);
@@ -57,6 +59,9 @@ const StationManager: React.FC<StationManagerProps> = ({ stations, genres, monit
             setIsModalOpen(false);
         } catch (error) {
             console.error('Failed to save station', error);
+            if (!wasToastHandled(error)) {
+                addToast('Failed to save station.', { type: 'error' });
+            }
         }
     };
 
@@ -65,6 +70,9 @@ const StationManager: React.FC<StationManagerProps> = ({ stations, genres, monit
             await onDeleteStation(stationId);
         } catch (error) {
             console.error('Failed to delete station', error);
+            if (!wasToastHandled(error)) {
+                addToast('Failed to delete station.', { type: 'error' });
+            }
         }
     };
 
@@ -305,10 +313,13 @@ const StationManager: React.FC<StationManagerProps> = ({ stations, genres, monit
                 successMessage += `\n\n${errors.length} entr${errors.length === 1 ? 'y was' : 'ies were'} skipped:\n• ${truncated}`;
             }
 
-            alert(successMessage);
+            addToast(successMessage, { type: errors.length > 0 ? 'warning' : 'success' });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Failed to import stations.';
-            alert(message);
+            if (!wasToastHandled(error)) {
+                addToast(message, { type: 'error' });
+            }
+            markToastHandled(error);
         } finally {
             setIsImporting(false);
             event.target.value = '';

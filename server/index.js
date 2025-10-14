@@ -4,6 +4,8 @@ const fs = require('node:fs/promises');
 const fssync = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { checkStreamHealth } = require('./monitor');
+const { logger, getRecentLogEntries, subscribeToLogEntries } = require('./logger');
 
 const defaultData = require('../data/defaultData.json');
 const stationLogos = require('../data/stationLogos.json');
@@ -264,7 +266,10 @@ async function loadDataFromDisk() {
         const parsed = JSON.parse(raw);
         return parsed;
     } catch (error) {
-        console.warn('Failed to read API data file, using defaults instead.', error);
+        logger.warn(
+            { err: error, category: 'errors', eventType: 'storage.load', path: DATA_FILE_PATH },
+            'Failed to read API data file, using defaults instead.'
+        );
         return null;
     }
 }
@@ -274,7 +279,10 @@ async function saveDataToDisk(data) {
         await ensureDirectory(path.dirname(DATA_FILE_PATH));
         await fs.writeFile(DATA_FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
     } catch (error) {
-        console.warn('Failed to persist API data file.', error);
+        logger.error(
+            { err: error, category: 'errors', eventType: 'storage.save', path: DATA_FILE_PATH },
+            'Failed to persist API data file.'
+        );
     }
 }
 
@@ -885,8 +893,129 @@ app.use(express.json());
 
 let database;
 
+app.post(`${API_PREFIX}/monitor/check`, async (req, res) => {
+    const payload = req.body || {};
+    const streams = Array.isArray(payload.streams) ? payload.streams : [];
+    if (streams.length === 0) {
+        return res.status(400).json({ error: 'streams must be a non-empty array' });
+    }
+
+    const timeoutCandidate = Number(payload.timeoutMs);
+    const timeoutMs = Number.isFinite(timeoutCandidate) ? timeoutCandidate : undefined;
+
+    try {
+        const results = await Promise.all(
+            streams.map(async entry => {
+                const stationId = typeof entry.stationId === 'string' ? entry.stationId : String(entry.stationId ?? '').trim();
+                const streamUrl = typeof entry.streamUrl === 'string' ? entry.streamUrl : '';
+
+                if (!stationId) {
+                    return { stationId: '', isOnline: false, error: 'stationId is required' };
+                }
+
+                if (!streamUrl.trim()) {
+                    return { stationId, isOnline: false, error: 'streamUrl is required' };
+                }
+
+                const health = await checkStreamHealth(streamUrl, { timeoutMs });
+                return { stationId, ...health };
+            })
+        );
+
+        res.json(results);
+        logger.info(
+            {
+                category: 'monitoring',
+                eventType: 'monitor.check',
+                stationCount: streams.length,
+                offlineCount: results.filter(result => !result.isOnline).length,
+            },
+            'Completed stream health check request.'
+        );
+    } catch (error) {
+        logger.error(
+            { err: error, category: 'errors', eventType: 'monitor.check' },
+            'Failed to perform stream health check'
+        );
+        res.status(500).json({ error: 'Failed to perform stream health check.' });
+    }
+});
+
 app.get(`${API_PREFIX}/health`, (req, res) => {
     res.json({ status: 'ok' });
+});
+
+function parseLogCategories(raw) {
+    if (!raw) {
+        return [];
+    }
+    const value = Array.isArray(raw) ? raw.join(',') : String(raw);
+    return value
+        .split(',')
+        .map(entry => entry.trim())
+        .filter(Boolean);
+}
+
+function parseNumberParam(value) {
+    if (Array.isArray(value)) {
+        value = value[0];
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function sendSseEntry(res, entry) {
+    res.write(`id: ${entry.sequence}\n`);
+    res.write('event: log\n');
+    res.write(`data: ${JSON.stringify(entry)}\n\n`);
+}
+
+app.get(`${API_PREFIX}/logs`, (req, res) => {
+    const categories = parseLogCategories(req.query.type || req.query.category || req.query.categories);
+    const limit = parseNumberParam(req.query.limit) || 200;
+    const cursor = parseNumberParam(req.query.cursor || req.query.after);
+
+    const entries = getRecentLogEntries({ categories, limit, after: cursor });
+    const nextCursor = entries.length > 0 ? entries[entries.length - 1].sequence : cursor ?? null;
+
+    res.json({ entries, cursor: nextCursor });
+});
+
+app.get(`${API_PREFIX}/logs/stream`, (req, res) => {
+    const categories = parseLogCategories(req.query.type || req.query.category || req.query.categories);
+    const limit = parseNumberParam(req.query.limit) || 50;
+    const cursor = parseNumberParam(req.query.cursor || req.query.after);
+    const allowed = categories.length > 0 ? new Set(categories) : null;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    if (typeof res.flushHeaders === 'function') {
+        res.flushHeaders();
+    }
+    res.write('retry: 5000\n\n');
+
+    const initial = getRecentLogEntries({ categories, limit, after: cursor });
+    for (const entry of initial) {
+        sendSseEntry(res, entry);
+    }
+
+    const listener = entry => {
+        if (allowed && !allowed.has(entry.category)) {
+            return;
+        }
+        sendSseEntry(res, entry);
+    };
+
+    const unsubscribe = subscribeToLogEntries(listener);
+    const heartbeat = setInterval(() => {
+        res.write(':keep-alive\n\n');
+    }, 15000);
+
+    req.on('close', () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+    });
 });
 
 app.get(`${API_PREFIX}/genres`, (req, res) => {
@@ -899,11 +1028,16 @@ app.post(`${API_PREFIX}/genres`, async (req, res) => {
         return res.status(400).json({ error: 'Genre name is required' });
     }
     const exists = database.genres.some(g => g.id === genre.id);
+    const action = exists ? 'update' : 'create';
     database.genres = exists
         ? database.genres.map(g => (g.id === genre.id ? genre : g))
         : [...database.genres, genre];
     await saveDataToDisk(database);
     res.json(genre);
+    logger.info(
+        { category: 'genres', eventType: `genres.${action}`, genreId: genre.id },
+        `Genre ${action}d.`
+    );
 });
 
 app.put(`${API_PREFIX}/genres/:id`, async (req, res) => {
@@ -928,6 +1062,10 @@ app.put(`${API_PREFIX}/genres/:id`, async (req, res) => {
     }));
     await saveDataToDisk(database);
     res.json(incoming);
+    logger.info(
+        { category: 'genres', eventType: 'genres.update', genreId: id },
+        'Genre updated.'
+    );
 });
 
 app.delete(`${API_PREFIX}/genres/:id`, async (req, res) => {
@@ -952,6 +1090,10 @@ app.delete(`${API_PREFIX}/genres/:id`, async (req, res) => {
     }));
     await saveDataToDisk(database);
     res.status(204).end();
+    logger.info(
+        { category: 'genres', eventType: 'genres.delete', genreId: id },
+        'Genre deleted.'
+    );
 });
 
 app.get(`${API_PREFIX}/stations`, (req, res) => {
@@ -970,6 +1112,15 @@ app.post(`${API_PREFIX}/stations`, async (req, res) => {
     database.stations = [...database.stations, normalized];
     await saveDataToDisk(database);
     res.json(normalized);
+    logger.info(
+        {
+            category: 'stations',
+            eventType: 'stations.create',
+            stationId: normalized.id,
+            genreId: normalized.genreId,
+        },
+        'Station created.'
+    );
 });
 
 app.put(`${API_PREFIX}/stations/:id`, async (req, res) => {
@@ -982,6 +1133,15 @@ app.put(`${API_PREFIX}/stations/:id`, async (req, res) => {
     database.stations[index] = normalized;
     await saveDataToDisk(database);
     res.json(normalized);
+    logger.info(
+        {
+            category: 'stations',
+            eventType: 'stations.update',
+            stationId: id,
+            genreId: normalized.genreId,
+        },
+        'Station updated.'
+    );
 });
 
 app.delete(`${API_PREFIX}/stations/:id`, async (req, res) => {
@@ -997,6 +1157,10 @@ app.delete(`${API_PREFIX}/stations/:id`, async (req, res) => {
     }));
     await saveDataToDisk(database);
     res.status(204).end();
+    logger.info(
+        { category: 'stations', eventType: 'stations.delete', stationId: id },
+        'Station deleted.'
+    );
 });
 
 app.get(`${API_PREFIX}/player-apps`, (req, res) => {
@@ -1015,6 +1179,15 @@ app.post(`${API_PREFIX}/player-apps`, async (req, res) => {
     database.playerApps = [...database.playerApps, normalized];
     await saveDataToDisk(database);
     res.json(normalized);
+    logger.info(
+        {
+            category: 'players',
+            eventType: 'players.create',
+            playerId: normalized.id,
+            platforms: normalized.platforms,
+        },
+        'Player app created.'
+    );
 });
 
 app.put(`${API_PREFIX}/player-apps/:id`, async (req, res) => {
@@ -1027,6 +1200,15 @@ app.put(`${API_PREFIX}/player-apps/:id`, async (req, res) => {
     database.playerApps[index] = normalized;
     await saveDataToDisk(database);
     res.json(normalized);
+    logger.info(
+        {
+            category: 'players',
+            eventType: 'players.update',
+            playerId: id,
+            platforms: normalized.platforms,
+        },
+        'Player app updated.'
+    );
 });
 
 app.delete(`${API_PREFIX}/player-apps/:id`, async (req, res) => {
@@ -1042,6 +1224,10 @@ app.delete(`${API_PREFIX}/player-apps/:id`, async (req, res) => {
     }));
     await saveDataToDisk(database);
     res.status(204).end();
+    logger.info(
+        { category: 'players', eventType: 'players.delete', playerId: id },
+        'Player app deleted.'
+    );
 });
 
 app.get(`${API_PREFIX}/export-profiles`, (req, res) => {
@@ -1065,6 +1251,15 @@ app.post(`${API_PREFIX}/export-profiles`, async (req, res) => {
     database.exportProfiles = [...database.exportProfiles, normalized];
     await saveDataToDisk(database);
     res.json(normalized);
+    logger.info(
+        {
+            category: 'exports',
+            eventType: 'profiles.create',
+            profileId: normalized.id,
+            stationCount: normalized.stationIds.length,
+        },
+        'Export profile created.'
+    );
 });
 
 app.put(`${API_PREFIX}/export-profiles/:id`, async (req, res) => {
@@ -1082,6 +1277,15 @@ app.put(`${API_PREFIX}/export-profiles/:id`, async (req, res) => {
     database.exportProfiles[index] = normalized;
     await saveDataToDisk(database);
     res.json(normalized);
+    logger.info(
+        {
+            category: 'exports',
+            eventType: 'profiles.update',
+            profileId: id,
+            stationCount: normalized.stationIds.length,
+        },
+        'Export profile updated.'
+    );
 });
 
 app.delete(`${API_PREFIX}/export-profiles/:id`, async (req, res) => {
@@ -1093,6 +1297,10 @@ app.delete(`${API_PREFIX}/export-profiles/:id`, async (req, res) => {
     }
     await saveDataToDisk(database);
     res.status(204).end();
+    logger.info(
+        { category: 'exports', eventType: 'profiles.delete', profileId: id },
+        'Export profile deleted.'
+    );
 });
 
 app.post(`${API_PREFIX}/export-profiles/:id/export`, async (req, res) => {
@@ -1121,23 +1329,52 @@ app.post(`${API_PREFIX}/export-profiles/:id/export`, async (req, res) => {
             })),
         };
         res.json(summary);
+        logger.info(
+            {
+                category: 'exports',
+                eventType: 'exports.generate',
+                profileId: profile.id,
+                stationCount: exportContext.stationCount,
+                fileCount: summary.files.length,
+            },
+            'Export profile generated successfully.'
+        );
     } catch (error) {
-        console.error('Failed to write export files', error);
+        logger.error(
+            { err: error, category: 'errors', eventType: 'exports.generate', profileId: profile.id },
+            'Failed to write export files'
+        );
         res.status(500).json({ error: 'Failed to write export files' });
     }
 });
 
 async function start() {
     database = await loadDatabase();
+    logger.info(
+        {
+            category: 'system',
+            eventType: 'storage.ready',
+            stationCount: database.stations.length,
+            genreCount: database.genres.length,
+            profileCount: database.exportProfiles.length,
+        },
+        'Loaded runtime data store.'
+    );
     await ensureDirectory(EXPORT_OUTPUT_DIRECTORY);
     app.listen(PORT, () => {
-        console.log(`WebRadio Admin API listening on port ${PORT}`);
+        logger.info(
+            { category: 'system', eventType: 'server.listen', port: PORT, apiPrefix: API_PREFIX },
+            `WebRadio Admin API listening on port ${PORT}`
+        );
     });
 }
 
 if (require.main === module) {
     start().catch(error => {
-        console.error('Failed to start API server', error);
+        logger.fatal(
+            { err: error, category: 'errors', eventType: 'server.start' },
+            'Failed to start API server'
+        );
         process.exit(1);
     });
 }

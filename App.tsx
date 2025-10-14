@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import StationManager from './components/StationManager';
@@ -6,8 +6,10 @@ import GenreManager from './components/GenreManager';
 import ExportManager from './components/ExportManager';
 import PlayerManager from './components/PlayerManager';
 import StreamMonitor from './components/StreamMonitor';
+import LogViewer from './components/LogViewer';
 import ListenPage from './components/ListenPage';
 import SettingsPage from './components/SettingsPage';
+import { useToast, markToastHandled } from './components/ToastProvider';
 import {
     RadioStation,
     Genre,
@@ -16,6 +18,7 @@ import {
     MonitoringSettings,
     MonitoringStatus,
     MonitoringEvent,
+    StreamHealthResult,
 } from './types';
 import {
     fetchStations,
@@ -37,11 +40,50 @@ import {
     isApiOffline,
     onApiStatusChange,
     resetApiStatus,
+    checkStreamsHealth,
 } from './api';
 
-export type View = 'dashboard' | 'stations' | 'genres' | 'export' | 'listen' | 'players' | 'monitoring' | 'settings';
+export type View =
+    | 'dashboard'
+    | 'stations'
+    | 'genres'
+    | 'export'
+    | 'listen'
+    | 'players'
+    | 'monitoring'
+    | 'logs'
+    | 'settings';
+
+const describeOnlineResult = (result?: StreamHealthResult) => {
+    if (!result) {
+        return 'online';
+    }
+
+    const parts: string[] = [];
+    if (typeof result.statusCode === 'number') {
+        parts.push(`status ${result.statusCode}`);
+    }
+    if (typeof result.responseTime === 'number') {
+        parts.push(`${result.responseTime}ms`);
+    }
+    return parts.length > 0 ? parts.join(', ') : 'online';
+};
+
+const describeOfflineResult = (result?: StreamHealthResult) => {
+    if (!result) {
+        return 'Stream unreachable';
+    }
+    if (result.error) {
+        return `Stream offline: ${result.error}`;
+    }
+    if (typeof result.statusCode === 'number') {
+        return `Stream offline (status ${result.statusCode})`;
+    }
+    return 'Stream offline';
+};
 
 const App: React.FC = () => {
+    const { addToast } = useToast();
     const [currentView, setCurrentView] = useState<View>('dashboard');
     const [stations, setStations] = useState<RadioStation[]>([]);
     const [genres, setGenres] = useState<Genre[]>([]);
@@ -54,6 +96,7 @@ const App: React.FC = () => {
     const [monitoringStatus, setMonitoringStatus] = useState<Record<string, MonitoringStatus>>({});
     const [monitoringEvents, setMonitoringEvents] = useState<MonitoringEvent[]>([]);
     const [isOfflineMode, setIsOfflineMode] = useState<boolean>(isApiOffline());
+    const lastMonitorErrorRef = useRef<string | null>(null);
 
     const loadData = useCallback(async () => {
         try {
@@ -104,10 +147,14 @@ const App: React.FC = () => {
                 }
                 return [...prev, savedStation];
             });
+            addToast(exists ? 'Station updated successfully.' : 'Station created successfully.', {
+                type: 'success',
+            });
         } catch (error) {
             console.error('Failed to save station', error);
             const message = error instanceof Error ? error.message : 'Failed to save station.';
-            alert(message);
+            addToast(message, { type: 'error' });
+            markToastHandled(error);
             throw error;
         }
     };
@@ -128,7 +175,8 @@ const App: React.FC = () => {
         } catch (error) {
             console.error('Failed to import stations', error);
             const message = error instanceof Error ? error.message : 'Failed to import stations.';
-            alert(message);
+            addToast(message, { type: 'error' });
+            markToastHandled(error);
             throw error;
         }
     };
@@ -145,10 +193,12 @@ const App: React.FC = () => {
                 const { [stationId]: _removed, ...rest } = prev;
                 return rest;
             });
+            addToast('Station deleted.', { type: 'success' });
         } catch (error) {
             console.error('Failed to delete station', error);
             const message = error instanceof Error ? error.message : 'Failed to delete station.';
-            alert(message);
+            addToast(message, { type: 'error' });
+            markToastHandled(error);
             throw error;
         }
     };
@@ -170,10 +220,14 @@ const App: React.FC = () => {
                     subGenres: profile.subGenres.filter(sub => allowedSubGenres.has(sub.toLowerCase())),
                 }))
             );
+            addToast(exists ? 'Genre updated successfully.' : 'Genre created successfully.', {
+                type: 'success',
+            });
         } catch (error) {
             console.error('Failed to save genre', error);
             const message = error instanceof Error ? error.message : 'Failed to save genre.';
-            alert(message);
+            addToast(message, { type: 'error' });
+            markToastHandled(error);
             throw error;
         }
     };
@@ -208,10 +262,12 @@ const App: React.FC = () => {
                             : profile.subGenres,
                 }))
             );
+            addToast('Genre deleted.', { type: 'success' });
         } catch (error) {
             console.error('Failed to delete genre', error);
             const message = error instanceof Error ? error.message : 'Failed to delete genre.';
-            alert(message);
+            addToast(message, { type: 'error' });
+            markToastHandled(error);
             throw error;
         }
     };
@@ -237,10 +293,14 @@ const App: React.FC = () => {
 
                 return withoutConflicts;
             });
+            addToast(exists ? 'Export profile updated successfully.' : 'Export profile created successfully.', {
+                type: 'success',
+            });
         } catch (error) {
             console.error('Failed to save export profile', error);
             const message = error instanceof Error ? error.message : 'Failed to save export profile.';
-            alert(message);
+            addToast(message, { type: 'error' });
+            markToastHandled(error);
             throw error;
         }
     };
@@ -253,10 +313,12 @@ const App: React.FC = () => {
         try {
             await removeExportProfile(profileId);
             setProfiles(prev => prev.filter(p => p.id !== profileId));
+            addToast('Export profile deleted.', { type: 'success' });
         } catch (error) {
             console.error('Failed to delete export profile', error);
             const message = error instanceof Error ? error.message : 'Failed to delete export profile.';
-            alert(message);
+            addToast(message, { type: 'error' });
+            markToastHandled(error);
             throw error;
         }
     };
@@ -271,10 +333,14 @@ const App: React.FC = () => {
                 }
                 return [...prev, savedApp];
             });
+            addToast(exists ? 'Player updated successfully.' : 'Player created successfully.', {
+                type: 'success',
+            });
         } catch (error) {
             console.error('Failed to save player app', error);
             const message = error instanceof Error ? error.message : 'Failed to save app.';
-            alert(message);
+            addToast(message, { type: 'error' });
+            markToastHandled(error);
             throw error;
         }
     };
@@ -288,78 +354,178 @@ const App: React.FC = () => {
             await removePlayerApp(appId);
             setPlayerApps(prev => prev.filter(app => app.id !== appId));
             setProfiles(prev => prev.map(profile => (profile.playerId === appId ? { ...profile, playerId: null } : profile)));
+            addToast('Player deleted.', { type: 'success' });
         } catch (error) {
             console.error('Failed to delete player app', error);
             const message = error instanceof Error ? error.message : 'Failed to delete app.';
-            alert(message);
+            addToast(message, { type: 'error' });
+            markToastHandled(error);
             throw error;
         }
     };
 
-    // Monitoring simulation
+    // Monitoring checks
     useEffect(() => {
         if (!monitoringSettings.enabled) {
+            setMonitoringStatus(prevStatus => {
+                const nextStatus: Record<string, MonitoringStatus> = {};
+                stations.forEach(station => {
+                    const previous = prevStatus[station.id] || { status: 'unknown', history: [], fails: 0 };
+                    nextStatus[station.id] = {
+                        ...previous,
+                        status: 'unknown',
+                        fails: 0,
+                        responseTime: undefined,
+                        statusCode: undefined,
+                        contentType: undefined,
+                        error: undefined,
+                    };
+                });
+                return nextStatus;
+            });
             return;
         }
 
-        const runCheck = () => {
-            const generatedEvents: MonitoringEvent[] = [];
+        let cancelled = false;
 
-            setMonitoringStatus(prevStatus => {
-                const updatedStatus: Record<string, MonitoringStatus> = {};
+        const runCheck = async () => {
+            const activeStations = stations.filter(station => station.isActive && station.streamUrl);
 
-                stations.forEach(station => {
-                    if (!station.isActive) {
-                        updatedStatus[station.id] = prevStatus[station.id] || { status: 'unknown', history: [], fails: 0 };
-                        return;
-                    }
+            if (activeStations.length === 0) {
+                setMonitoringStatus(prevStatus => {
+                    const nextStatus: Record<string, MonitoringStatus> = {};
+                    stations.forEach(station => {
+                        const previous = prevStatus[station.id] || { status: 'unknown', history: [], fails: 0 };
+                        nextStatus[station.id] = {
+                            ...previous,
+                            status: 'unknown',
+                            fails: 0,
+                            responseTime: undefined,
+                            statusCode: undefined,
+                            contentType: undefined,
+                            error: undefined,
+                        };
+                    });
+                    return nextStatus;
+                });
+                return;
+            }
 
-                    const current = prevStatus[station.id] || { status: 'unknown', history: [], fails: 0 };
-                    const isOnline = Math.random() > 0.1; // 90% chance to be online
-                    const newHistory = [isOnline ? 1 : 0, ...current.history].slice(0, 100);
-                    const newFails = isOnline ? 0 : current.fails + 1;
+            try {
+                const results = await checkStreamsHealth(
+                    activeStations.map(station => ({ stationId: station.id, streamUrl: station.streamUrl }))
+                );
 
-                    const oldStatus = current.status;
-                    const newLiveStatus: MonitoringStatus['status'] = isOnline ? 'online' : 'offline';
+                if (cancelled) {
+                    return;
+                }
 
-                    updatedStatus[station.id] = { status: newLiveStatus, history: newHistory, fails: newFails };
+                lastMonitorErrorRef.current = null;
+                const timestamp = Date.now();
+                const resultMap = new Map(results.map(result => [result.stationId, result] as const));
+                const generatedEvents: MonitoringEvent[] = [];
 
-                    if (oldStatus !== 'unknown' && oldStatus !== newLiveStatus) {
-                        generatedEvents.push({
-                            id: `e${Date.now()}-${station.id}`,
-                            stationName: station.name,
-                            message: `Stream status changed to ${newLiveStatus}`,
-                            timestamp: Date.now(),
-                            type: newLiveStatus === 'online' ? 'success' : 'error',
-                        });
-                    }
+                setMonitoringStatus(prevStatus => {
+                    const nextStatus: Record<string, MonitoringStatus> = {};
 
-                    if (!isOnline && monitoringSettings.threshold > 0 && newFails === monitoringSettings.threshold) {
-                        generatedEvents.push({
-                            id: `threshold-${Date.now()}-${station.id}`,
-                            stationName: station.name,
-                            message: `Stream failed ${newFails} checks in a row`,
-                            timestamp: Date.now(),
-                            type: 'error',
-                        });
-                    }
+                    stations.forEach(station => {
+                        const previous = prevStatus[station.id] || { status: 'unknown', history: [], fails: 0 };
+
+                        if (!station.isActive || !station.streamUrl) {
+                            nextStatus[station.id] = {
+                                ...previous,
+                                status: 'unknown',
+                                fails: 0,
+                                responseTime: undefined,
+                                statusCode: undefined,
+                                contentType: undefined,
+                                error: undefined,
+                            };
+                            return;
+                        }
+
+                        const result = resultMap.get(station.id);
+                        const isOnline = result?.isOnline === true;
+                        const historyValue = isOnline ? 1 : 0;
+                        const history = [historyValue, ...previous.history].slice(0, 100);
+                        const fails = isOnline ? 0 : previous.fails + 1;
+                        const status: MonitoringStatus['status'] = isOnline ? 'online' : 'offline';
+                        const errorMessage = result?.error ?? (!result ? 'No monitoring data available.' : undefined);
+
+                        nextStatus[station.id] = {
+                            status,
+                            history,
+                            fails,
+                            responseTime: result?.responseTime,
+                            statusCode: result?.statusCode,
+                            contentType: result?.contentType,
+                            lastCheckedAt: timestamp,
+                            error: errorMessage,
+                        };
+
+                        if (previous.status !== 'unknown' && previous.status !== status) {
+                            generatedEvents.push({
+                                id: `status-${timestamp}-${station.id}`,
+                                stationName: station.name,
+                                message:
+                                    status === 'online'
+                                        ? `Stream is back online (${describeOnlineResult(result)})`
+                                        : describeOfflineResult(result),
+                                timestamp,
+                                type: status === 'online' ? 'success' : 'error',
+                            });
+                        }
+
+                        if (!isOnline && monitoringSettings.threshold > 0 && fails === monitoringSettings.threshold) {
+                            generatedEvents.push({
+                                id: `threshold-${timestamp}-${station.id}`,
+                                stationName: station.name,
+                                message: `Stream failed ${fails} checks in a row.`,
+                                timestamp,
+                                type: 'error',
+                            });
+                        }
+                    });
+
+                    return nextStatus;
                 });
 
-                return { ...prevStatus, ...updatedStatus };
-            });
-
-            if (generatedEvents.length > 0) {
-                setMonitoringEvents(prev => [...generatedEvents, ...prev].slice(0, 100));
+                if (generatedEvents.length > 0) {
+                    setMonitoringEvents(prev => [...generatedEvents, ...prev].slice(0, 100));
+                }
+            } catch (error) {
+                if (cancelled) {
+                    return;
+                }
+                console.error('Failed to check stream health', error);
+                const message = error instanceof Error ? error.message : 'Failed to check stream health.';
+                if (lastMonitorErrorRef.current !== message) {
+                    addToast(message, { type: 'error' });
+                    lastMonitorErrorRef.current = message;
+                    markToastHandled(error);
+                }
             }
         };
 
-        runCheck();
+        void runCheck();
 
         const intervalMs = Math.max(1, monitoringSettings.interval) * 60 * 1000;
-        const intervalId = setInterval(runCheck, intervalMs);
+        const intervalId = window.setInterval(() => {
+            void runCheck();
+        }, intervalMs);
 
-        return () => clearInterval(intervalId);
-    }, [monitoringSettings.enabled, monitoringSettings.interval, monitoringSettings.threshold, stations]);
+        return () => {
+            cancelled = true;
+            window.clearInterval(intervalId);
+        };
+    }, [
+        monitoringSettings.enabled,
+        monitoringSettings.interval,
+        monitoringSettings.threshold,
+        stations,
+        addToast,
+        checkStreamsHealth,
+    ]);
 
     const renderView = () => {
         switch (currentView) {
@@ -402,6 +568,8 @@ const App: React.FC = () => {
                 return <ListenPage stations={stations} genres={genres} />;
             case 'monitoring':
                 return <StreamMonitor stations={stations} settings={monitoringSettings} status={monitoringStatus} events={monitoringEvents} onSaveSettings={setMonitoringSettings} />;
+            case 'logs':
+                return <LogViewer isOffline={isOfflineMode} />;
             case 'settings':
                 return (
                     <SettingsPage
