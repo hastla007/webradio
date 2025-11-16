@@ -14,9 +14,12 @@ const ACCESS_TOKEN_EXPIRY = process.env.ACCESS_TOKEN_EXPIRY || '15m';
 const REFRESH_TOKEN_EXPIRY = process.env.REFRESH_TOKEN_EXPIRY || '7d';
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
 
-// Warn if using default secrets in production
-if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'webradio-secret-key-change-in-production') {
-  console.warn('⚠️  WARNING: Using default JWT_SECRET in production! Set JWT_SECRET environment variable.');
+// Fail if using default secrets in production
+if (process.env.NODE_ENV === 'production') {
+  if (JWT_SECRET === 'webradio-secret-key-change-in-production' ||
+      JWT_REFRESH_SECRET === 'webradio-refresh-secret-change-in-production') {
+    throw new Error('❌ FATAL: Cannot use default JWT secrets in production! Set JWT_SECRET and JWT_REFRESH_SECRET environment variables.');
+  }
 }
 
 /**

@@ -4,7 +4,7 @@
  */
 
 const { verifyAccessToken, hashToken } = require('./auth');
-const { getUserById, getApiKeyByHash } = require('./auth-db');
+const { getUserById, getApiKeyByHash, updateApiKeyLastUsed } = require('./auth-db');
 
 /**
  * Extract token from Authorization header or cookie
@@ -88,6 +88,11 @@ async function authenticate(req, res, next) {
       req.authMethod = 'api-key';
       req.apiKeyId = apiKey.id;
 
+      // Update last_used timestamp (non-blocking)
+      updateApiKeyLastUsed(apiKey.id).catch(err => {
+        console.error('Failed to update API key last_used:', err);
+      });
+
       return next();
     } catch (error) {
       console.error('API key authentication error:', error);
@@ -163,6 +168,11 @@ async function optionalAuthenticate(req, res, next) {
           req.user = user;
           req.authMethod = 'api-key';
           req.apiKeyId = apiKey.id;
+
+          // Update last_used timestamp (non-blocking)
+          updateApiKeyLastUsed(apiKey.id).catch(err => {
+            console.error('Failed to update API key last_used:', err);
+          });
         }
       }
     } catch (error) {
