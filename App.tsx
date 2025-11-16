@@ -9,6 +9,7 @@ import StreamMonitor from './components/StreamMonitor';
 import LogViewer from './components/LogViewer';
 import ListenPage from './components/ListenPage';
 import SettingsPage from './components/SettingsPage';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
 import { useToast, markToastHandled } from './components/ToastProvider';
 import { useConfirm } from './components/ConfirmProvider';
 import {
@@ -54,7 +55,8 @@ export type View =
     | 'players'
     | 'monitoring'
     | 'logs'
-    | 'settings';
+    | 'settings'
+    | 'analytics';
 
 const App: React.FC = () => {
     const { addToast } = useToast();
@@ -585,6 +587,8 @@ const App: React.FC = () => {
                         onUpdateMonitoring={setMonitoringSettings}
                     />
                 );
+            case 'analytics':
+                return <AnalyticsDashboard />;
             default:
                 return <Dashboard stations={stations} genres={genres} profiles={profiles} monitoringStatus={monitoringStatus} />;
         }

@@ -12,6 +12,7 @@ import {
   SettingsIcon,
   SunIcon,
   MoonIcon,
+  AnalyticsIcon,
 } from './Icons';
 import { useTheme } from './ThemeProvider';
 
@@ -30,6 +31,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => {
     { id: 'listen', label: 'Listen', icon: <HeadphonesIcon /> },
     { id: 'players', label: 'Apps / Players', icon: <DeviceIcon /> },
     { id: 'monitoring', label: 'Monitoring', icon: <PulseIcon /> },
+    { id: 'analytics', label: 'Analytics', icon: <AnalyticsIcon /> },
     { id: 'logs', label: 'Logs', icon: <LogsIcon /> },
     { id: 'settings', label: 'Settings', icon: <SettingsIcon /> },
   ];
