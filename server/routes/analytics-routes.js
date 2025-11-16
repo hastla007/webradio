@@ -526,7 +526,15 @@ router.get('/export/:format', async (req, res) => {
       });
     } else if (format === 'csv') {
       // Convert to CSV
-      const headers = Object.keys(result.rows[0] || {});
+      if (result.rows.length === 0) {
+        // Return empty CSV with just headers
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="analytics-${Date.now()}.csv"`);
+        res.send('');
+        return;
+      }
+
+      const headers = Object.keys(result.rows[0]);
       const csv = [
         headers.join(','),
         ...result.rows.map(row =>

@@ -469,7 +469,7 @@ async function runTests() {
       name: 'Test Export Profile',
       genreIds: [],
       stationIds: [],
-      playerId: playerAppId,
+      playerId: null, // Don't use playerAppId since it was deleted in previous test
     };
 
     const res = await makeRequest('POST', `${API_PREFIX}/export-profiles`, testProfile);

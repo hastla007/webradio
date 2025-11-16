@@ -458,23 +458,48 @@ export const subscribeToLogStream = (
 // ============================================================================
 
 export const fetchAnalyticsDashboard = () =>
-    request<any>('/analytics/dashboard');
+    withFallback(
+        () => request<any>('/analytics/dashboard'),
+        () => {
+            throw new Error('Analytics dashboard requires a connected API server.');
+        }
+    );
 
 export const fetchStationAnalytics = (stationId: number, period: string = 'all_time') =>
-    request<any>(`/analytics/stations/${stationId}/stats?period=${period}`);
+    withFallback(
+        () => request<any>(`/analytics/stations/${stationId}/stats?period=${period}`),
+        () => {
+            throw new Error('Station analytics requires a connected API server.');
+        }
+    );
 
 export const fetchListeningTrends = (period: string = 'daily', days: number = 30) =>
-    request<any>(`/analytics/listening-trends?period=${period}&days=${days}`);
+    withFallback(
+        () => request<any>(`/analytics/listening-trends?period=${period}&days=${days}`),
+        () => {
+            throw new Error('Listening trends requires a connected API server.');
+        }
+    );
 
 export const fetchGeographicDistribution = (stationId?: number, period: string = 'all_time') => {
     const params = new URLSearchParams();
     if (stationId) params.set('stationId', String(stationId));
     params.set('period', period);
-    return request<any>(`/analytics/geographic-distribution?${params.toString()}`);
+    return withFallback(
+        () => request<any>(`/analytics/geographic-distribution?${params.toString()}`),
+        () => {
+            throw new Error('Geographic distribution requires a connected API server.');
+        }
+    );
 };
 
 export const fetchExportReports = () =>
-    request<any>('/analytics/export-reports');
+    withFallback(
+        () => request<any>('/analytics/export-reports'),
+        () => {
+            throw new Error('Export reports requires a connected API server.');
+        }
+    );
 
 export const trackListeningEvent = (eventData: {
     stationId: number;
@@ -489,14 +514,24 @@ export const trackListeningEvent = (eventData: {
     playerAppId?: number;
     streamQualityScore?: number;
 }) =>
-    request<any>('/analytics/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(eventData),
-    });
+    withFallback(
+        () => request<any>('/analytics/events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(eventData),
+        }),
+        () => {
+            throw new Error('Tracking events requires a connected API server.');
+        }
+    );
 
 export const exportAnalytics = (format: 'csv' | 'json', stationIds?: string) => {
     const params = new URLSearchParams();
     if (stationIds) params.set('stationIds', stationIds);
-    return request<any>(`/analytics/export/${format}?${params.toString()}`);
+    return withFallback(
+        () => request<any>(`/analytics/export/${format}?${params.toString()}`),
+        () => {
+            throw new Error('Exporting analytics requires a connected API server.');
+        }
+    );
 };
