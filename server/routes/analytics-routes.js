@@ -5,6 +5,7 @@
 
 const express = require('express');
 const router = express.Router();
+const { broadcastListeningEvent, broadcastDashboardUpdate } = require('../websocket-analytics');
 
 /**
  * GET /analytics/dashboard
@@ -440,6 +441,25 @@ router.post('/events', async (req, res) => {
       ipAddress,
       userAgent
     ]);
+
+    const event = {
+      id: result.rows[0].id,
+      station_id: stationId,
+      session_id: sessionId,
+      event_type: eventType,
+      duration_minutes: durationMinutes,
+      country_code: countryCode,
+      region,
+      city,
+      device_type: deviceType,
+      platform,
+      player_app_id: playerAppId,
+      stream_quality_score: streamQualityScore,
+      created_at: result.rows[0].created_at
+    };
+
+    // Broadcast the event to connected WebSocket clients
+    broadcastListeningEvent(event);
 
     res.status(201).json({
       id: result.rows[0].id,

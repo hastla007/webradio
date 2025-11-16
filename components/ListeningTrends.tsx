@@ -2,6 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { fetchListeningTrends } from '../api';
 import { useToast } from './ToastProvider';
 import { ArrowTrendingUpIcon, ChartBarIcon } from '@heroicons/react/24/outline';
+import { useAnalyticsWebSocket } from '../hooks/useAnalyticsWebSocket';
+import {
+    LineChart,
+    Line,
+    AreaChart,
+    Area,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend,
+    ResponsiveContainer
+} from 'recharts';
 
 const ListeningTrends: React.FC = () => {
     const [trendsData, setTrendsData] = useState<any>(null);
@@ -9,6 +22,20 @@ const ListeningTrends: React.FC = () => {
     const [days, setDays] = useState(30);
     const [isLoading, setIsLoading] = useState(true);
     const { addToast } = useToast();
+
+    // WebSocket connection for real-time updates
+    const { isConnected } = useAnalyticsWebSocket({
+        autoConnect: true,
+        onAnalyticsUpdate: (event) => {
+            // Reload trends when new analytics events arrive
+            if (event.type === 'listening:event' || event.type === 'trending:update') {
+                loadTrends();
+            }
+        },
+        onConnect: () => {
+            console.log('Connected to analytics WebSocket');
+        }
+    });
 
     useEffect(() => {
         loadTrends();
@@ -59,10 +86,18 @@ const ListeningTrends: React.FC = () => {
         <div className="space-y-6">
             {/* Controls */}
             <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center">
-                    <ArrowTrendingUpIcon className="w-6 h-6 mr-2" />
-                    Listening Trends
-                </h2>
+                <div className="flex items-center space-x-3">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center">
+                        <ArrowTrendingUpIcon className="w-6 h-6 mr-2" />
+                        Listening Trends
+                    </h2>
+                    {isConnected && (
+                        <span className="flex items-center text-xs text-green-600 dark:text-green-400">
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></span>
+                            Live
+                        </span>
+                    )}
+                </div>
                 <div className="flex items-center space-x-4">
                     <select
                         value={period}
@@ -85,17 +120,74 @@ const ListeningTrends: React.FC = () => {
                 </div>
             </div>
 
-            {/* Trend Chart Placeholder */}
+            {/* Trend Chart */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                     Listening Activity Over Time
                 </h3>
                 {trends && trends.length > 0 ? (
                     <div className="space-y-4">
-                        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                            <p>Trend chart visualization will be displayed here</p>
-                            <p className="text-xs mt-2">{trends.length} data points available</p>
-                        </div>
+                        <ResponsiveContainer width="100%" height={400}>
+                            <AreaChart
+                                data={trends.map((trend: any) => ({
+                                    date: new Date(trend.time_bucket).toLocaleDateString(undefined, {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        ...(period === 'hourly' ? { hour: '2-digit' } : {})
+                                    }),
+                                    plays: parseInt(trend.total_plays) || 0,
+                                    listeners: parseInt(trend.total_listeners) || 0,
+                                    quality: parseFloat(trend.avg_quality) || 0,
+                                }))}
+                                margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                            >
+                                <defs>
+                                    <linearGradient id="colorPlays" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                                    </linearGradient>
+                                    <linearGradient id="colorListeners" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.8}/>
+                                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-gray-700" />
+                                <XAxis
+                                    dataKey="date"
+                                    className="text-xs text-gray-500 dark:text-gray-400"
+                                    tick={{ fill: 'currentColor' }}
+                                />
+                                <YAxis
+                                    className="text-xs text-gray-500 dark:text-gray-400"
+                                    tick={{ fill: 'currentColor' }}
+                                />
+                                <Tooltip
+                                    contentStyle={{
+                                        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                                        border: 'none',
+                                        borderRadius: '0.5rem',
+                                        color: '#fff'
+                                    }}
+                                />
+                                <Legend />
+                                <Area
+                                    type="monotone"
+                                    dataKey="plays"
+                                    stroke="#3b82f6"
+                                    fillOpacity={1}
+                                    fill="url(#colorPlays)"
+                                    name="Plays"
+                                />
+                                <Area
+                                    type="monotone"
+                                    dataKey="listeners"
+                                    stroke="#8b5cf6"
+                                    fillOpacity={1}
+                                    fill="url(#colorListeners)"
+                                    name="Listeners"
+                                />
+                            </AreaChart>
+                        </ResponsiveContainer>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                             {trends.slice(0, 5).map((trend: any, index: number) => (
                                 <div key={index} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">

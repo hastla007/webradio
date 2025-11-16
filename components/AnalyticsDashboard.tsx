@@ -3,6 +3,8 @@ import { fetchAnalyticsDashboard, fetchListeningTrends, fetchGeographicDistribut
 import StationAnalytics from './StationAnalytics';
 import ListeningTrends from './ListeningTrends';
 import ExportReports from './ExportReports';
+import GeographicDistribution from './GeographicDistribution';
+import CustomReportBuilder from './CustomReportBuilder';
 import { useToast } from './ToastProvider';
 import {
     ChartBarIcon,
@@ -12,7 +14,8 @@ import {
     UsersIcon,
     ClockIcon,
     SignalIcon,
-    HeartIcon
+    HeartIcon,
+    PresentationChartLineIcon
 } from '@heroicons/react/24/outline';
 
 interface DashboardStats {
@@ -58,7 +61,7 @@ interface DashboardData {
     geoDistribution: GeoDistribution[];
 }
 
-type TabView = 'overview' | 'trends' | 'geographic' | 'exports' | 'station';
+type TabView = 'overview' | 'trends' | 'geographic' | 'exports' | 'custom' | 'station';
 
 const AnalyticsDashboard: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabView>('overview');
@@ -360,6 +363,7 @@ const AnalyticsDashboard: React.FC = () => {
                         { id: 'trends' as TabView, label: 'Listening Trends', icon: ArrowTrendingUpIcon },
                         { id: 'geographic' as TabView, label: 'Geographic', icon: GlobeAltIcon },
                         { id: 'exports' as TabView, label: 'Export Reports', icon: DocumentChartBarIcon },
+                        { id: 'custom' as TabView, label: 'Custom Reports', icon: PresentationChartLineIcon },
                     ].map((tab) => (
                         <button
                             key={tab.id}
@@ -383,17 +387,9 @@ const AnalyticsDashboard: React.FC = () => {
             <div>
                 {activeTab === 'overview' && renderOverview()}
                 {activeTab === 'trends' && <ListeningTrends />}
-                {activeTab === 'geographic' && (
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                            Geographic Distribution
-                        </h2>
-                        <p className="text-gray-500 dark:text-gray-400">
-                            Detailed geographic analysis will be displayed here.
-                        </p>
-                    </div>
-                )}
+                {activeTab === 'geographic' && <GeographicDistribution />}
                 {activeTab === 'exports' && <ExportReports />}
+                {activeTab === 'custom' && <CustomReportBuilder />}
                 {activeTab === 'station' && selectedStationId && (
                     <StationAnalytics
                         stationId={selectedStationId}

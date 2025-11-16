@@ -1,4 +1,5 @@
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
@@ -12,6 +13,7 @@ const { checkStreamHealth } = require('./monitor');
 const { logger, getRecentLogEntries, subscribeToLogEntries } = require('./logger');
 const { encryptSecret, decryptSecret, isEncryptedSecret } = require('./secrets');
 const { sanitizeTimeout, normalizeProtocol, testFtpConnection, uploadFiles } = require('./ftp');
+const { initializeWebSocket } = require('./websocket-analytics');
 
 // Authentication imports
 const authRoutes = require('./routes/auth-routes');
@@ -1882,10 +1884,15 @@ async function start() {
         'Loaded runtime data store.'
     );
     await ensureDirectory(EXPORT_OUTPUT_DIRECTORY);
-    app.listen(PORT, () => {
+
+    // Create HTTP server and attach Socket.IO
+    const httpServer = http.createServer(app);
+    initializeWebSocket(httpServer, corsOrigin);
+
+    httpServer.listen(PORT, () => {
         logger.info(
             { category: 'system', eventType: 'server.listen', port: PORT, apiPrefix: API_PREFIX },
-            `WebRadio Admin API listening on port ${PORT}`
+            `WebRadio Admin API listening on port ${PORT} with WebSocket support`
         );
     });
 }

@@ -10,6 +10,18 @@ import {
     SignalIcon,
     GlobeAltIcon
 } from '@heroicons/react/24/outline';
+import {
+    LineChart,
+    Line,
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend,
+    ResponsiveContainer
+} from 'recharts';
 
 interface StationAnalyticsProps {
     stationId: number;
@@ -296,16 +308,64 @@ const StationAnalytics: React.FC<StationAnalyticsProps> = ({ stationId, onBack }
                 </div>
             )}
 
-            {/* Trends Chart Placeholder */}
+            {/* Trends Chart */}
             {trends && trends.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                         Listening Trends (Last 7 Days)
                     </h2>
-                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                        <p>Chart visualization will be displayed here</p>
-                        <p className="text-xs mt-2">{trends.length} data points available</p>
-                    </div>
+                    <ResponsiveContainer width="100%" height={350}>
+                        <LineChart
+                            data={trends.map((trend: any) => ({
+                                date: new Date(trend.time_bucket).toLocaleDateString(undefined, {
+                                    month: 'short',
+                                    day: 'numeric'
+                                }),
+                                plays: parseInt(trend.play_count) || 0,
+                                listeners: parseInt(trend.unique_listeners) || 0,
+                                quality: parseFloat(trend.avg_quality) || 0,
+                            }))}
+                            margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                        >
+                            <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-gray-700" />
+                            <XAxis
+                                dataKey="date"
+                                className="text-xs text-gray-500 dark:text-gray-400"
+                                tick={{ fill: 'currentColor' }}
+                            />
+                            <YAxis
+                                className="text-xs text-gray-500 dark:text-gray-400"
+                                tick={{ fill: 'currentColor' }}
+                            />
+                            <Tooltip
+                                contentStyle={{
+                                    backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                                    border: 'none',
+                                    borderRadius: '0.5rem',
+                                    color: '#fff'
+                                }}
+                            />
+                            <Legend />
+                            <Line
+                                type="monotone"
+                                dataKey="plays"
+                                stroke="#3b82f6"
+                                strokeWidth={2}
+                                name="Plays"
+                                dot={{ r: 4 }}
+                                activeDot={{ r: 6 }}
+                            />
+                            <Line
+                                type="monotone"
+                                dataKey="listeners"
+                                stroke="#8b5cf6"
+                                strokeWidth={2}
+                                name="Listeners"
+                                dot={{ r: 4 }}
+                                activeDot={{ r: 6 }}
+                            />
+                        </LineChart>
+                    </ResponsiveContainer>
                 </div>
             )}
         </div>
