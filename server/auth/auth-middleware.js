@@ -35,11 +35,27 @@ function extractToken(req) {
 /**
  * Authenticate user via JWT token or API key
  * Attaches user object to req.user if authenticated
+ * Falls back to allowing all requests if database is unavailable (JSON file mode)
  */
 async function authenticate(req, res, next) {
   const token = extractToken(req);
 
   if (!token) {
+    // Check if database is available by attempting a quick test
+    const { testConnection } = require('../db');
+    try {
+      const dbAvailable = await testConnection();
+      if (!dbAvailable) {
+        // Database unavailable - allow request without authentication (development/JSON file mode)
+        console.log('[Auth] Database unavailable - bypassing authentication');
+        return next();
+      }
+    } catch (error) {
+      // Database unavailable - allow request without authentication
+      console.log('[Auth] Database unavailable - bypassing authentication');
+      return next();
+    }
+
     return res.status(401).json({
       error: 'Authentication required',
       message: 'No authentication token provided',
@@ -228,15 +244,45 @@ function requireRole(...roles) {
 
 /**
  * Require admin role
+ * Allows all requests if database is unavailable (JSON file mode)
  */
-function requireAdmin(req, res, next) {
+async function requireAdmin(req, res, next) {
+  // If no user is attached, check if database is available
+  if (!req.user) {
+    const { testConnection } = require('../db');
+    try {
+      const dbAvailable = await testConnection();
+      if (!dbAvailable) {
+        // Database unavailable - allow request without role check
+        return next();
+      }
+    } catch (error) {
+      // Database unavailable - allow request without role check
+      return next();
+    }
+  }
   return requireRole('admin')(req, res, next);
 }
 
 /**
  * Require admin or editor role
+ * Allows all requests if database is unavailable (JSON file mode)
  */
-function requireEditor(req, res, next) {
+async function requireEditor(req, res, next) {
+  // If no user is attached, check if database is available
+  if (!req.user) {
+    const { testConnection } = require('../db');
+    try {
+      const dbAvailable = await testConnection();
+      if (!dbAvailable) {
+        // Database unavailable - allow request without role check
+        return next();
+      }
+    } catch (error) {
+      // Database unavailable - allow request without role check
+      return next();
+    }
+  }
   return requireRole('admin', 'editor')(req, res, next);
 }
 
