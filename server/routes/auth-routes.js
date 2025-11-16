@@ -176,7 +176,6 @@ router.post('/login', async (req, res) => {
     });
 
     const refreshTokenValue = generateSecureToken(32);
-    const refreshToken = generateRefreshToken({ userId: user.id });
 
     // Store refresh token in database
     await createRefreshToken(user.id, refreshTokenValue, 7, {
@@ -226,16 +225,6 @@ router.post('/refresh', async (req, res) => {
       });
     }
 
-    // Verify refresh token JWT
-    const payload = verifyRefreshToken(refreshToken);
-
-    if (!payload) {
-      return res.status(401).json({
-        error: 'Invalid refresh token',
-        message: 'Refresh token is invalid or expired',
-      });
-    }
-
     // Check if refresh token exists in database and is not revoked
     const tokenHash = hashToken(refreshToken);
     const storedToken = await getRefreshToken(tokenHash);
@@ -248,7 +237,7 @@ router.post('/refresh', async (req, res) => {
     }
 
     // Get user
-    const user = await getUserById(payload.userId);
+    const user = await getUserById(storedToken.user_id);
 
     if (!user || !user.is_active) {
       return res.status(401).json({

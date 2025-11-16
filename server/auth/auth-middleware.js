@@ -151,13 +151,41 @@ async function optionalAuthenticate(req, res, next) {
     return next();
   }
 
-  // Try to authenticate, but don't fail if it doesn't work
-  try {
-    await authenticate(req, res, next);
-  } catch (error) {
-    // Continue without authentication
-    next();
+  // Check if it's an API key (starts with wra_)
+  if (token.startsWith('wra_')) {
+    try {
+      const keyHash = hashToken(token);
+      const apiKey = await getApiKeyByHash(keyHash);
+
+      if (apiKey && apiKey.is_active && (!apiKey.expires_at || new Date(apiKey.expires_at) >= new Date())) {
+        const user = await getUserById(apiKey.user_id);
+        if (user && user.is_active) {
+          req.user = user;
+          req.authMethod = 'api-key';
+          req.apiKeyId = apiKey.id;
+        }
+      }
+    } catch (error) {
+      // Continue without authentication
+    }
+    return next();
   }
+
+  // Try to verify JWT token
+  const payload = verifyAccessToken(token);
+  if (payload) {
+    try {
+      const user = await getUserById(payload.userId);
+      if (user && user.is_active) {
+        req.user = user;
+        req.authMethod = 'jwt';
+      }
+    } catch (error) {
+      // Continue without authentication
+    }
+  }
+
+  next();
 }
 
 /**
