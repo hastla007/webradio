@@ -1446,8 +1446,8 @@ app.post(`${API_PREFIX}/stations`, authenticate, requireEditor, async (req, res)
     if (!normalized.name || !normalized.streamUrl) {
         return res.status(400).json({ error: 'Station name and streamUrl are required' });
     }
-    // Check for duplicate station by ID (only if ID was explicitly provided)
-    if (req.body.id && database.stations.some(station => station.id === req.body.id)) {
+    // Check for duplicate station by ID
+    if (normalized.id && database.stations.some(station => station.id === normalized.id)) {
         return res.status(409).json({ error: 'Station with this ID already exists' });
     }
     database.stations = [...database.stations, normalized];
