@@ -6,6 +6,34 @@
 const { verifyAccessToken, hashToken } = require('./auth');
 const { getUserById, getApiKeyByHash, updateApiKeyLastUsed } = require('./auth-db');
 
+// Cache database availability status to avoid checking on every request
+let dbAvailableCache = null;
+let dbAvailableCacheTime = 0;
+const DB_CACHE_TTL = 60000; // Cache for 60 seconds
+
+/**
+ * Check if database is available with caching
+ * @returns {Promise<boolean>}
+ */
+async function isDatabaseAvailable() {
+  const now = Date.now();
+  if (dbAvailableCache !== null && (now - dbAvailableCacheTime) < DB_CACHE_TTL) {
+    return dbAvailableCache;
+  }
+
+  const { testConnection } = require('../db');
+  try {
+    const available = await testConnection();
+    dbAvailableCache = available;
+    dbAvailableCacheTime = now;
+    return available;
+  } catch (error) {
+    dbAvailableCache = false;
+    dbAvailableCacheTime = now;
+    return false;
+  }
+}
+
 /**
  * Extract token from Authorization header or cookie
  * @param {Object} req - Express request
@@ -41,17 +69,10 @@ async function authenticate(req, res, next) {
   const token = extractToken(req);
 
   if (!token) {
-    // Check if database is available by attempting a quick test
-    const { testConnection } = require('../db');
-    try {
-      const dbAvailable = await testConnection();
-      if (!dbAvailable) {
-        // Database unavailable - allow request without authentication (development/JSON file mode)
-        console.log('[Auth] Database unavailable - bypassing authentication');
-        return next();
-      }
-    } catch (error) {
-      // Database unavailable - allow request without authentication
+    // Check if database is available (with caching to avoid performance issues)
+    const dbAvailable = await isDatabaseAvailable();
+    if (!dbAvailable) {
+      // Database unavailable - allow request without authentication (development/JSON file mode)
       console.log('[Auth] Database unavailable - bypassing authentication');
       return next();
     }
@@ -249,14 +270,8 @@ function requireRole(...roles) {
 async function requireAdmin(req, res, next) {
   // If no user is attached, check if database is available
   if (!req.user) {
-    const { testConnection } = require('../db');
-    try {
-      const dbAvailable = await testConnection();
-      if (!dbAvailable) {
-        // Database unavailable - allow request without role check
-        return next();
-      }
-    } catch (error) {
+    const dbAvailable = await isDatabaseAvailable();
+    if (!dbAvailable) {
       // Database unavailable - allow request without role check
       return next();
     }
@@ -271,14 +286,8 @@ async function requireAdmin(req, res, next) {
 async function requireEditor(req, res, next) {
   // If no user is attached, check if database is available
   if (!req.user) {
-    const { testConnection } = require('../db');
-    try {
-      const dbAvailable = await testConnection();
-      if (!dbAvailable) {
-        // Database unavailable - allow request without role check
-        return next();
-      }
-    } catch (error) {
+    const dbAvailable = await isDatabaseAvailable();
+    if (!dbAvailable) {
       // Database unavailable - allow request without role check
       return next();
     }
