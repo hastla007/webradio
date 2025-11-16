@@ -127,6 +127,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         ...(options.headers as Record<string, string> | undefined),
     };
 
+    // Add authentication header if access token exists
+    const accessToken = typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : null;
+    if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+
     if (options.body && !('Content-Type' in headers)) {
         headers['Content-Type'] = 'application/json';
     }
@@ -136,6 +142,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(targetUrl, {
         ...options,
         headers,
+        credentials: 'include', // Include cookies for refresh tokens
     });
 
     const contentType = response.headers.get('content-type');

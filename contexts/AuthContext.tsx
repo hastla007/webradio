@@ -22,6 +22,37 @@ export function AuthProvider({ children }: AuthProviderProps) {
     localStorage.getItem('access_token')
   );
 
+  /**
+   * Refresh access token using refresh token
+   */
+  const refreshAccessToken = useCallback(async (): Promise<void> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Send refresh token cookie
+      });
+
+      if (!response.ok) {
+        throw new Error('Token refresh failed');
+      }
+
+      const data = await response.json();
+
+      setAccessToken(data.accessToken);
+      setUser(data.user);
+      localStorage.setItem('access_token', data.accessToken);
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      // If refresh fails, logout
+      setUser(null);
+      setAccessToken(null);
+      localStorage.removeItem('access_token');
+    }
+  }, []); // No dependencies - using state setters which are stable
+
   // Refresh authentication on mount
   useEffect(() => {
     if (accessToken) {
@@ -100,37 +131,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       localStorage.removeItem('access_token');
     }
   };
-
-  /**
-   * Refresh access token using refresh token
-   */
-  const refreshAccessToken = useCallback(async (): Promise<void> => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include', // Send refresh token cookie
-      });
-
-      if (!response.ok) {
-        throw new Error('Token refresh failed');
-      }
-
-      const data = await response.json();
-
-      setAccessToken(data.accessToken);
-      setUser(data.user);
-      localStorage.setItem('access_token', data.accessToken);
-    } catch (error) {
-      console.error('Token refresh error:', error);
-      // If refresh fails, logout
-      setUser(null);
-      setAccessToken(null);
-      localStorage.removeItem('access_token');
-    }
-  }, []); // No dependencies - logout inline to avoid circular dependency
 
   /**
    * Refresh authentication state (get current user)

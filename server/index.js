@@ -1245,11 +1245,7 @@ const handleMonitorCheck = async (req, res) => {
     }
 };
 
-registerApiRoute('post', '/monitor/check', handleMonitorCheck);
-
-registerApiRoute('get', '/health', (req, res) => {
-    res.json({ status: 'ok' });
-});
+registerApiRoute('post', '/monitor/check', authenticate, handleMonitorCheck);
 
 function parseLogCategories(raw) {
     if (!raw) {
