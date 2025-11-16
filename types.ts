@@ -168,3 +168,78 @@ export interface LogEntry {
   message: string;
   details: Record<string, unknown>;
 }
+
+// ============================================================================
+// Authentication Types
+// ============================================================================
+
+export type UserRole = 'admin' | 'editor' | 'viewer';
+
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  role: UserRole;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  last_login: string | null;
+}
+
+export interface ApiKey {
+  id: number;
+  user_id: number;
+  name: string;
+  created_at: string;
+  last_used: string | null;
+  expires_at: string | null;
+  is_active: boolean;
+}
+
+export interface AuditLogEntry {
+  id: number;
+  user_id: number | null;
+  username?: string;
+  email?: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  changes: Record<string, unknown> | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+}
+
+export interface AuditLogStats {
+  total_actions: number;
+  unique_users: number;
+  unique_entity_types: number;
+  actions_by_type: Record<string, number>;
+}
+
+export interface AuthContextType {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  refreshAuth: () => Promise<void>;
+}
+
+export interface LoginResponse {
+  message: string;
+  user: User;
+  accessToken: string;
+}
+
+export interface RegisterData {
+  username: string;
+  email: string;
+  password: string;
+  role?: UserRole;
+}
+
+export interface ChangePasswordData {
+  currentPassword: string;
+  newPassword: string;
+}
