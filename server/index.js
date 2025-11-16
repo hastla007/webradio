@@ -1,5 +1,8 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
 const fs = require('node:fs/promises');
 const fssync = require('node:fs');
 const path = require('node:path');
@@ -9,6 +12,12 @@ const { checkStreamHealth } = require('./monitor');
 const { logger, getRecentLogEntries, subscribeToLogEntries } = require('./logger');
 const { encryptSecret, decryptSecret, isEncryptedSecret } = require('./secrets');
 const { sanitizeTimeout, normalizeProtocol, testFtpConnection, uploadFiles } = require('./ftp');
+
+// Authentication imports
+const authRoutes = require('./routes/auth-routes');
+const userRoutes = require('./routes/user-routes');
+const auditRoutes = require('./routes/audit-routes');
+const { optionalAuthenticate } = require('./auth/auth-middleware');
 
 const defaultData = require('../data/defaultData.json');
 const stationLogos = require('../data/stationLogos.json');
@@ -1099,8 +1108,53 @@ function buildFtpSettingsFromPlayer(player) {
 }
 
 const app = express();
-app.use(cors());
+
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'", 'https:'],
+      frameSrc: ["'none'"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+}));
+
+// Rate limiting for authentication endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 requests per window
+  message: 'Too many authentication attempts, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// General API rate limiting
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 requests per window
+  message: 'Too many requests, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || '*',
+  credentials: true,
+}));
 app.use(express.json());
+app.use(cookieParser());
 
 const registerApiRoute = (method, route, handler) => {
     const normalized = route.startsWith('/') ? route : `/${route}`;
@@ -1198,6 +1252,28 @@ function sendSseEntry(res, entry) {
     res.write('event: log\n');
     res.write(`data: ${JSON.stringify(entry)}\n\n`);
 }
+
+// ============================================================================
+// Authentication Routes
+// ============================================================================
+
+// Mount auth routes with rate limiting
+app.use(`${API_PREFIX}/auth`, authLimiter, authRoutes);
+app.use(`${API_PREFIX}/users`, apiLimiter, userRoutes);
+app.use(`${API_PREFIX}/audit-logs`, apiLimiter, auditRoutes);
+
+// Health check endpoint (no auth required)
+app.get(`${API_PREFIX}/health`, (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
+// ============================================================================
+// Existing Routes (now with optional authentication)
+// ============================================================================
 
 const handleFetchLogs = (req, res) => {
     const categories = parseLogCategories(req.query.type || req.query.category || req.query.categories);
