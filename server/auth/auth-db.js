@@ -3,7 +3,7 @@
  * Handles CRUD operations for users, API keys, tokens, and audit logs
  */
 
-const pool = require('../db');
+const { pool } = require('../db');
 const { hashPassword, hashToken, sanitizeUser } = require('./auth');
 
 // ============================================================================
