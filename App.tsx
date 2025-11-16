@@ -533,7 +533,7 @@ const App: React.FC = () => {
             monitorCancelledRef.current = true;
             window.clearInterval(intervalId);
         };
-    }, [monitoringSettings.enabled, monitoringSettings.interval, runMonitoringCheck, stations]);
+    }, [monitoringSettings.enabled, monitoringSettings.interval, runMonitoringCheck]);
 
     const renderView = () => {
         switch (currentView) {

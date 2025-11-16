@@ -26,9 +26,12 @@ async function attemptRequest(streamUrl, method, timeoutMs) {
         };
     } catch (error) {
         clearTimeout(timeoutId);
+        const errorMessage = error instanceof Error
+            ? (error.name === 'AbortError' ? 'Request timed out' : error.message)
+            : 'Unknown error';
         return {
             isOnline: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: errorMessage,
             responseTime: Date.now() - start,
         };
     }

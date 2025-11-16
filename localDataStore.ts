@@ -189,8 +189,9 @@ function persist(data: DataShape) {
     if (storage) {
         try {
             storage.setItem(STORAGE_KEY, JSON.stringify(data));
-        } catch {
-            // ignore persistence errors
+        } catch (error) {
+            // Log persistence errors to help with debugging
+            console.warn('Failed to persist data to localStorage:', error);
         }
     }
 }

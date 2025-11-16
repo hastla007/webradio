@@ -220,7 +220,7 @@ async function createPlayerApp(app) {
             id, name, platforms, platform, description, contact_email, notes,
             ftp_enabled, ftp_server, ftp_username, ftp_password, ftp_protocol, ftp_timeout_ms, network_code,
             ima_enabled, video_preroll_default_size, placements
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
         RETURNING *`,
         [
             app.id,
