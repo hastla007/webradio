@@ -25,4 +25,49 @@ pool.on('error', (err, client) => {
     // Don't exit the process, just log the error
 });
 
-module.exports = { pool };
+/**
+ * Test database connection
+ * @returns {Promise<boolean>} True if connection successful
+ */
+async function testConnection() {
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query('SELECT 1');
+            return true;
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('Database connection test failed:', error.message);
+        return false;
+    }
+}
+
+/**
+ * Wait for database to be ready with retry logic
+ * @param {number} maxRetries - Maximum number of retry attempts
+ * @param {number} retryDelay - Delay between retries in milliseconds
+ * @returns {Promise<void>}
+ */
+async function waitForDatabase(maxRetries = 10, retryDelay = 2000) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        console.log(`Attempting database connection (${attempt}/${maxRetries})...`);
+
+        const connected = await testConnection();
+
+        if (connected) {
+            console.log('✅ Database connection successful');
+            return;
+        }
+
+        if (attempt < maxRetries) {
+            console.log(`Database not ready, retrying in ${retryDelay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+    }
+
+    throw new Error('❌ FATAL: Could not connect to database after multiple attempts');
+}
+
+module.exports = { pool, testConnection, waitForDatabase };

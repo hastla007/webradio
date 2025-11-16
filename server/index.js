@@ -1808,6 +1808,18 @@ app.get(`${API_PREFIX}/export-profiles/:id/download`, authenticate, async (req, 
 });
 
 async function start() {
+    // Test database connection on startup
+    const { waitForDatabase } = require('./db');
+    try {
+        await waitForDatabase();
+    } catch (error) {
+        logger.fatal(
+            { err: error, category: 'errors', eventType: 'database.connect' },
+            'Failed to connect to database'
+        );
+        process.exit(1);
+    }
+
     database = await loadDatabase();
     logger.info(
         {

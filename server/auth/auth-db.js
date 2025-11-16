@@ -511,10 +511,13 @@ async function getAuditLogStats(options = {}) {
 
   let query = `
     SELECT
-      COUNT(*) as total_actions,
-      COUNT(DISTINCT user_id) as unique_users,
-      COUNT(DISTINCT entity_type) as unique_entity_types,
-      jsonb_object_agg(action, action_count) as actions_by_type
+      COALESCE(COUNT(*), 0) as total_actions,
+      COALESCE(COUNT(DISTINCT user_id), 0) as unique_users,
+      COALESCE(COUNT(DISTINCT entity_type), 0) as unique_entity_types,
+      CASE
+        WHEN COUNT(*) > 0 THEN jsonb_object_agg(action, action_count)
+        ELSE '{}'::jsonb
+      END as actions_by_type
     FROM (
       SELECT action, COUNT(*) as action_count
       FROM audit_log
@@ -544,6 +547,17 @@ async function getAuditLogStats(options = {}) {
   query += ' GROUP BY action) as action_stats';
 
   const result = await pool.query(query, params);
+
+  // Return default values if no rows
+  if (!result.rows || result.rows.length === 0) {
+    return {
+      total_actions: 0,
+      unique_users: 0,
+      unique_entity_types: 0,
+      actions_by_type: {},
+    };
+  }
+
   return result.rows[0];
 }
 

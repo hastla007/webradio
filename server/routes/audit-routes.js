@@ -94,18 +94,32 @@ router.get('/entity/:entityType/:entityId', async (req, res) => {
     const { entityType, entityId } = req.params;
     const { limit, offset } = req.query;
 
-    const logs = await getAuditLogs({
-      entityType,
-      limit: limit ? parseInt(limit, 10) : 50,
-      offset: offset ? parseInt(offset, 10) : 0,
-    });
+    // Parse and validate pagination params
+    const parsedLimit = limit ? parseInt(limit, 10) : 50;
+    const parsedOffset = offset ? parseInt(offset, 10) : 0;
 
-    // Filter by entity ID (client-side for now since entityId is VARCHAR)
-    const filteredLogs = logs.filter(log => log.entity_id === entityId);
+    if (isNaN(parsedLimit) || isNaN(parsedOffset)) {
+      return res.status(400).json({
+        error: 'Invalid parameters',
+        message: 'Limit and offset must be valid numbers',
+      });
+    }
+
+    // Query with entityType first, then filter by entityId in SQL
+    const { pool } = require('../db');
+    const result = await pool.query(
+      `SELECT al.*, u.username, u.email
+       FROM audit_log al
+       LEFT JOIN users u ON al.user_id = u.id
+       WHERE al.entity_type = $1 AND al.entity_id = $2
+       ORDER BY al.created_at DESC
+       LIMIT $3 OFFSET $4`,
+      [entityType, entityId, parsedLimit, parsedOffset]
+    );
 
     res.json({
-      logs: filteredLogs,
-      count: filteredLogs.length,
+      logs: result.rows,
+      count: result.rows.length,
       entityType,
       entityId,
     });
@@ -127,10 +141,27 @@ router.get('/user/:userId', async (req, res) => {
     const userId = parseInt(req.params.userId, 10);
     const { limit, offset, startDate, endDate } = req.query;
 
+    if (isNaN(userId)) {
+      return res.status(400).json({
+        error: 'Invalid user ID',
+        message: 'User ID must be a valid number',
+      });
+    }
+
+    const parsedLimit = limit ? parseInt(limit, 10) : 100;
+    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+
+    if (isNaN(parsedLimit) || isNaN(parsedOffset)) {
+      return res.status(400).json({
+        error: 'Invalid parameters',
+        message: 'Limit and offset must be valid numbers',
+      });
+    }
+
     const logs = await getAuditLogs({
       userId,
-      limit: limit ? parseInt(limit, 10) : 100,
-      offset: offset ? parseInt(offset, 10) : 0,
+      limit: parsedLimit,
+      offset: parsedOffset,
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
     });

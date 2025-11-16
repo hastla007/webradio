@@ -23,6 +23,41 @@ export function AuthProvider({ children }: AuthProviderProps) {
   );
 
   /**
+   * Refresh authentication state (get current user)
+   */
+  const refreshAuth = useCallback(async (): Promise<void> => {
+    setIsLoading(true);
+
+    try {
+      const currentToken = localStorage.getItem('access_token');
+      if (!currentToken) {
+        throw new Error('No access token');
+      }
+
+      const response = await fetch(`${API_BASE_URL}/auth/me`, {
+        headers: {
+          Authorization: `Bearer ${currentToken}`,
+        },
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get user');
+      }
+
+      const data = await response.json();
+      setUser(data.user);
+      setAccessToken(currentToken);
+    } catch (error) {
+      console.error('Refresh auth error:', error);
+      // If getting user fails, try to refresh token
+      await refreshAccessToken();
+    } finally {
+      setIsLoading(false);
+    }
+  }, []); // No dependencies - using state setters which are stable
+
+  /**
    * Refresh access token using refresh token
    */
   const refreshAccessToken = useCallback(async (): Promise<void> => {
@@ -60,8 +95,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } else {
       setIsLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount
+  }, [accessToken, refreshAuth]); // Include dependencies
 
   // Set up token refresh interval (14 minutes - before 15min expiry)
   useEffect(() => {
@@ -129,35 +163,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setUser(null);
       setAccessToken(null);
       localStorage.removeItem('access_token');
-    }
-  };
-
-  /**
-   * Refresh authentication state (get current user)
-   */
-  const refreshAuth = async (): Promise<void> => {
-    setIsLoading(true);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to get user');
-      }
-
-      const data = await response.json();
-      setUser(data.user);
-    } catch (error) {
-      console.error('Refresh auth error:', error);
-      // If getting user fails, try to refresh token
-      await refreshAccessToken();
-    } finally {
-      setIsLoading(false);
     }
   };
 
