@@ -96,6 +96,13 @@ router.get('/:id', async (req, res) => {
   try {
     const userId = parseInt(req.params.id, 10);
 
+    if (isNaN(userId)) {
+      return res.status(400).json({
+        error: 'Invalid user ID',
+        message: 'User ID must be a valid number',
+      });
+    }
+
     // Check if user is accessing their own profile or is admin
     if (req.user.id !== userId && req.user.role !== 'admin') {
       return res.status(403).json({
@@ -195,6 +202,13 @@ router.patch('/:id', async (req, res) => {
     const userId = parseInt(req.params.id, 10);
     const updates = req.body;
 
+    if (isNaN(userId)) {
+      return res.status(400).json({
+        error: 'Invalid user ID',
+        message: 'User ID must be a valid number',
+      });
+    }
+
     // Check if user is updating their own profile or is admin
     if (req.user.id !== userId && req.user.role !== 'admin') {
       return res.status(403).json({
@@ -255,6 +269,13 @@ router.delete('/:id', requireAdmin, async (req, res) => {
   try {
     const userId = parseInt(req.params.id, 10);
 
+    if (isNaN(userId)) {
+      return res.status(400).json({
+        error: 'Invalid user ID',
+        message: 'User ID must be a valid number',
+      });
+    }
+
     // Prevent admin from deleting themselves
     if (req.user.id === userId) {
       return res.status(400).json({
@@ -302,6 +323,13 @@ router.get('/:id/api-keys', async (req, res) => {
   try {
     const userId = parseInt(req.params.id, 10);
 
+    if (isNaN(userId)) {
+      return res.status(400).json({
+        error: 'Invalid user ID',
+        message: 'User ID must be a valid number',
+      });
+    }
+
     // Check if user is accessing their own keys or is admin
     if (req.user.id !== userId && req.user.role !== 'admin') {
       return res.status(403).json({
@@ -333,6 +361,13 @@ router.post('/:id/api-keys', async (req, res) => {
   try {
     const userId = parseInt(req.params.id, 10);
     const { name, expiresAt } = req.body;
+
+    if (isNaN(userId)) {
+      return res.status(400).json({
+        error: 'Invalid user ID',
+        message: 'User ID must be a valid number',
+      });
+    }
 
     // Check if user is creating their own key or is admin
     if (req.user.id !== userId && req.user.role !== 'admin') {
@@ -388,6 +423,13 @@ router.delete('/:userId/api-keys/:keyId', async (req, res) => {
   try {
     const userId = parseInt(req.params.userId, 10);
     const keyId = parseInt(req.params.keyId, 10);
+
+    if (isNaN(userId) || isNaN(keyId)) {
+      return res.status(400).json({
+        error: 'Invalid parameters',
+        message: 'User ID and key ID must be valid numbers',
+      });
+    }
 
     // Check if user is deleting their own key or is admin
     if (req.user.id !== userId && req.user.role !== 'admin') {
