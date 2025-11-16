@@ -69,7 +69,7 @@ async function logAudit(userId, action, entityType, entityId, req, changes = nul
  */
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, password, role = 'viewer' } = req.body;
+    const { username, email, password } = req.body;
 
     // Validate required fields
     if (!username || !email || !password) {
@@ -107,8 +107,9 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // Create user
-    const user = await createUser({ username, email, password, role });
+    // Create user - always force 'viewer' role for public registration
+    // Only admins can create users with elevated roles via the user management API
+    const user = await createUser({ username, email, password, role: 'viewer' });
 
     await logAudit(user.id, 'CREATE', 'user', user.id, req);
 

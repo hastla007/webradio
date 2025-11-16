@@ -17,7 +17,7 @@ const { sanitizeTimeout, normalizeProtocol, testFtpConnection, uploadFiles } = r
 const authRoutes = require('./routes/auth-routes');
 const userRoutes = require('./routes/user-routes');
 const auditRoutes = require('./routes/audit-routes');
-const { optionalAuthenticate } = require('./auth/auth-middleware');
+const { authenticate, optionalAuthenticate, requireEditor } = require('./auth/auth-middleware');
 
 const defaultData = require('../data/defaultData.json');
 const stationLogos = require('../data/stationLogos.json');
@@ -275,6 +275,18 @@ function normalizePlayerApp(app) {
 
 function normalizePlayerApps(apps) {
     return apps.map(normalizePlayerApp);
+}
+
+function sanitizePlayerAppForResponse(app) {
+    // Return a copy of the player app with password masked for security
+    return {
+        ...app,
+        ftpPassword: app.ftpPassword ? '***MASKED***' : '',
+    };
+}
+
+function sanitizePlayerAppsForResponse(apps) {
+    return apps.map(sanitizePlayerAppForResponse);
 }
 
 function normalizeProfile(profile) {
@@ -1149,8 +1161,14 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// CORS configuration - fail if using wildcard in production
+const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
+if (process.env.NODE_ENV === 'production' && corsOrigin === '*') {
+  throw new Error('❌ FATAL: Cannot use wildcard CORS origin in production! Set CORS_ORIGIN environment variable to specific domain(s).');
+}
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: corsOrigin,
   credentials: true,
 }));
 app.use(express.json());
@@ -1327,14 +1345,17 @@ const handleStreamLogs = (req, res) => {
 
 registerApiRoute('get', '/logs/stream', handleStreamLogs);
 
-app.get(`${API_PREFIX}/genres`, (req, res) => {
+app.get(`${API_PREFIX}/genres`, authenticate, (req, res) => {
     res.json(database.genres);
 });
 
-app.post(`${API_PREFIX}/genres`, async (req, res) => {
+app.post(`${API_PREFIX}/genres`, authenticate, requireEditor, async (req, res) => {
     const genre = normalizeGenre(req.body || {});
-    if (!genre.name) {
-        return res.status(400).json({ error: 'Genre name is required' });
+    if (!genre.name || typeof genre.name !== 'string' || genre.name.trim().length === 0) {
+        return res.status(400).json({ error: 'Genre name is required and must be a non-empty string' });
+    }
+    if (genre.name.length > 255) {
+        return res.status(400).json({ error: 'Genre name must not exceed 255 characters' });
     }
     const exists = database.genres.some(g => g.id === genre.id);
     const action = exists ? 'update' : 'create';
@@ -1349,7 +1370,7 @@ app.post(`${API_PREFIX}/genres`, async (req, res) => {
     );
 });
 
-app.put(`${API_PREFIX}/genres/:id`, async (req, res) => {
+app.put(`${API_PREFIX}/genres/:id`, authenticate, requireEditor, async (req, res) => {
     const { id } = req.params;
     const incoming = normalizeGenre({ ...req.body, id });
     const index = database.genres.findIndex(g => g.id === id);
@@ -1377,7 +1398,7 @@ app.put(`${API_PREFIX}/genres/:id`, async (req, res) => {
     );
 });
 
-app.delete(`${API_PREFIX}/genres/:id`, async (req, res) => {
+app.delete(`${API_PREFIX}/genres/:id`, authenticate, requireEditor, async (req, res) => {
     const { id } = req.params;
     const existing = database.genres.find(g => g.id === id);
     if (!existing) {
@@ -1405,11 +1426,11 @@ app.delete(`${API_PREFIX}/genres/:id`, async (req, res) => {
     );
 });
 
-app.get(`${API_PREFIX}/stations`, (req, res) => {
+app.get(`${API_PREFIX}/stations`, authenticate, (req, res) => {
     res.json(database.stations);
 });
 
-app.post(`${API_PREFIX}/stations`, async (req, res) => {
+app.post(`${API_PREFIX}/stations`, authenticate, requireEditor, async (req, res) => {
     const normalized = normalizeStation(req.body || {}, database.genres);
     if (!normalized.name || !normalized.streamUrl) {
         return res.status(400).json({ error: 'Station name and streamUrl are required' });
@@ -1432,7 +1453,7 @@ app.post(`${API_PREFIX}/stations`, async (req, res) => {
     );
 });
 
-app.put(`${API_PREFIX}/stations/:id`, async (req, res) => {
+app.put(`${API_PREFIX}/stations/:id`, authenticate, requireEditor, async (req, res) => {
     const { id } = req.params;
     const index = database.stations.findIndex(station => station.id === id);
     if (index === -1) {
@@ -1453,7 +1474,7 @@ app.put(`${API_PREFIX}/stations/:id`, async (req, res) => {
     );
 });
 
-app.delete(`${API_PREFIX}/stations/:id`, async (req, res) => {
+app.delete(`${API_PREFIX}/stations/:id`, authenticate, requireEditor, async (req, res) => {
     const { id } = req.params;
     const before = database.stations.length;
     database.stations = database.stations.filter(station => station.id !== id);
@@ -1472,11 +1493,12 @@ app.delete(`${API_PREFIX}/stations/:id`, async (req, res) => {
     );
 });
 
-app.get(`${API_PREFIX}/player-apps`, (req, res) => {
-    res.json(database.playerApps);
+app.get(`${API_PREFIX}/player-apps`, authenticate, (req, res) => {
+    // Sanitize passwords before sending response
+    res.json(sanitizePlayerAppsForResponse(database.playerApps));
 });
 
-app.post(`${API_PREFIX}/player-apps/test-ftp`, async (req, res) => {
+app.post(`${API_PREFIX}/player-apps/test-ftp`, authenticate, requireEditor, async (req, res) => {
     const payload = req.body || {};
     const ftpServer = typeof payload.ftpServer === 'string' ? payload.ftpServer.trim() : '';
     const ftpUsername = typeof payload.ftpUsername === 'string' ? payload.ftpUsername.trim() : '';
@@ -1508,7 +1530,7 @@ app.post(`${API_PREFIX}/player-apps/test-ftp`, async (req, res) => {
     }
 });
 
-app.post(`${API_PREFIX}/player-apps`, async (req, res) => {
+app.post(`${API_PREFIX}/player-apps`, authenticate, requireEditor, async (req, res) => {
     const normalized = normalizePlayerApp(req.body || {});
     if (!normalized.name) {
         return res.status(400).json({ error: 'Player app name is required' });
@@ -1519,7 +1541,7 @@ app.post(`${API_PREFIX}/player-apps`, async (req, res) => {
     }
     database.playerApps = [...database.playerApps, normalized];
     await saveDataToDisk(database);
-    res.json(normalized);
+    res.json(sanitizePlayerAppForResponse(normalized));
     logger.info(
         {
             category: 'players',
@@ -1531,7 +1553,7 @@ app.post(`${API_PREFIX}/player-apps`, async (req, res) => {
     );
 });
 
-app.put(`${API_PREFIX}/player-apps/:id`, async (req, res) => {
+app.put(`${API_PREFIX}/player-apps/:id`, authenticate, requireEditor, async (req, res) => {
     const { id } = req.params;
     const index = database.playerApps.findIndex(app => app.id === id);
     if (index === -1) {
@@ -1540,7 +1562,7 @@ app.put(`${API_PREFIX}/player-apps/:id`, async (req, res) => {
     const normalized = normalizePlayerApp({ ...req.body, id });
     database.playerApps[index] = normalized;
     await saveDataToDisk(database);
-    res.json(normalized);
+    res.json(sanitizePlayerAppForResponse(normalized));
     logger.info(
         {
             category: 'players',
@@ -1552,7 +1574,7 @@ app.put(`${API_PREFIX}/player-apps/:id`, async (req, res) => {
     );
 });
 
-app.delete(`${API_PREFIX}/player-apps/:id`, async (req, res) => {
+app.delete(`${API_PREFIX}/player-apps/:id`, authenticate, requireEditor, async (req, res) => {
     const { id } = req.params;
     const before = database.playerApps.length;
     database.playerApps = database.playerApps.filter(app => app.id !== id);
@@ -1571,11 +1593,11 @@ app.delete(`${API_PREFIX}/player-apps/:id`, async (req, res) => {
     );
 });
 
-app.get(`${API_PREFIX}/export-profiles`, (req, res) => {
+app.get(`${API_PREFIX}/export-profiles`, authenticate, (req, res) => {
     res.json(database.exportProfiles);
 });
 
-app.post(`${API_PREFIX}/export-profiles`, async (req, res) => {
+app.post(`${API_PREFIX}/export-profiles`, authenticate, requireEditor, async (req, res) => {
     const normalized = normalizeProfile(req.body || {});
     if (!normalized.name) {
         return res.status(400).json({ error: 'Profile name is required' });
@@ -1603,7 +1625,7 @@ app.post(`${API_PREFIX}/export-profiles`, async (req, res) => {
     );
 });
 
-app.put(`${API_PREFIX}/export-profiles/:id`, async (req, res) => {
+app.put(`${API_PREFIX}/export-profiles/:id`, authenticate, requireEditor, async (req, res) => {
     const { id } = req.params;
     const index = database.exportProfiles.findIndex(profile => profile.id === id);
     if (index === -1) {
@@ -1629,7 +1651,7 @@ app.put(`${API_PREFIX}/export-profiles/:id`, async (req, res) => {
     );
 });
 
-app.delete(`${API_PREFIX}/export-profiles/:id`, async (req, res) => {
+app.delete(`${API_PREFIX}/export-profiles/:id`, authenticate, requireEditor, async (req, res) => {
     const { id } = req.params;
     const before = database.exportProfiles.length;
     database.exportProfiles = database.exportProfiles.filter(profile => profile.id !== id);
@@ -1644,7 +1666,7 @@ app.delete(`${API_PREFIX}/export-profiles/:id`, async (req, res) => {
     );
 });
 
-app.post(`${API_PREFIX}/export-profiles/:id/export`, async (req, res) => {
+app.post(`${API_PREFIX}/export-profiles/:id/export`, authenticate, requireEditor, async (req, res) => {
     const { id } = req.params;
     const profile = database.exportProfiles.find(profile => profile.id === id);
     if (!profile) {
@@ -1719,7 +1741,7 @@ app.post(`${API_PREFIX}/export-profiles/:id/export`, async (req, res) => {
     }
 });
 
-app.get(`${API_PREFIX}/export-profiles/:id/download`, async (req, res) => {
+app.get(`${API_PREFIX}/export-profiles/:id/download`, authenticate, async (req, res) => {
     const { id } = req.params;
     const profile = database.exportProfiles.find(profile => profile.id === id);
     if (!profile) {
