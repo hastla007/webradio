@@ -1163,14 +1163,17 @@ const apiLimiter = rateLimit({
 
 // CORS configuration - fail if using wildcard in production
 const corsOriginRaw = process.env.CORS_ORIGIN || 'http://localhost:5173';
-if (process.env.NODE_ENV === 'production' && corsOriginRaw === '*') {
-  throw new Error('❌ FATAL: Cannot use wildcard CORS origin in production! Set CORS_ORIGIN environment variable to specific domain(s).');
-}
 
 // Support comma-separated origins with whitespace trimming
 const corsOrigin = corsOriginRaw.includes(',')
   ? corsOriginRaw.split(',').map(origin => origin.trim())
   : corsOriginRaw;
+
+// Check for wildcard in production (handles both single value and array)
+const corsOrigins = Array.isArray(corsOrigin) ? corsOrigin : [corsOrigin];
+if (process.env.NODE_ENV === 'production' && corsOrigins.includes('*')) {
+  throw new Error('❌ FATAL: Cannot use wildcard CORS origin in production! Set CORS_ORIGIN environment variable to specific domain(s).');
+}
 
 app.use(cors({
   origin: corsOrigin,
@@ -1354,6 +1357,15 @@ app.get(`${API_PREFIX}/genres`, authenticate, (req, res) => {
     res.json(database.genres);
 });
 
+app.get(`${API_PREFIX}/genres/:id`, authenticate, (req, res) => {
+    const { id } = req.params;
+    const genre = database.genres.find(g => g.id === id);
+    if (!genre) {
+        return res.status(404).json({ error: 'Genre not found' });
+    }
+    res.json(genre);
+});
+
 app.post(`${API_PREFIX}/genres`, authenticate, requireEditor, async (req, res) => {
     const genre = normalizeGenre(req.body || {});
     if (!genre.name || typeof genre.name !== 'string' || genre.name.trim().length === 0) {
@@ -1446,9 +1458,18 @@ app.post(`${API_PREFIX}/stations`, authenticate, requireEditor, async (req, res)
     if (!normalized.name || !normalized.streamUrl) {
         return res.status(400).json({ error: 'Station name and streamUrl are required' });
     }
-    // Check for duplicate station by ID
-    if (normalized.id && database.stations.some(station => station.id === normalized.id)) {
+    // Check for duplicate station by ID (should never happen with UUID but check anyway)
+    if (database.stations.some(station => station.id === normalized.id)) {
         return res.status(409).json({ error: 'Station with this ID already exists' });
+    }
+    // Check for duplicate stream URL
+    const existingStation = database.stations.find(station => station.streamUrl === normalized.streamUrl);
+    if (existingStation) {
+        return res.status(409).json({
+            error: 'A station with this stream URL already exists',
+            existingStationId: existingStation.id,
+            existingStationName: existingStation.name
+        });
     }
     database.stations = [...database.stations, normalized];
     await saveDataToDisk(database);
@@ -1617,7 +1638,13 @@ app.post(`${API_PREFIX}/export-profiles`, authenticate, requireEditor, async (re
     if (exists) {
         return res.status(409).json({ error: 'Export profile already exists' });
     }
+    // Validate that playerId exists if provided
     if (normalized.playerId) {
+        const playerExists = database.playerApps.some(app => app.id === normalized.playerId);
+        if (!playerExists) {
+            return res.status(400).json({ error: 'Player app with specified playerId does not exist' });
+        }
+        // Clear playerId from other profiles (ensures only one profile can have a given playerId)
         database.exportProfiles = database.exportProfiles.map(profile =>
             profile.playerId === normalized.playerId ? { ...profile, playerId: null } : profile
         );
@@ -1643,7 +1670,13 @@ app.put(`${API_PREFIX}/export-profiles/:id`, authenticate, requireEditor, async 
         return res.status(404).json({ error: 'Export profile not found' });
     }
     const normalized = normalizeProfile({ ...req.body, id });
+    // Validate that playerId exists if provided
     if (normalized.playerId) {
+        const playerExists = database.playerApps.some(app => app.id === normalized.playerId);
+        if (!playerExists) {
+            return res.status(400).json({ error: 'Player app with specified playerId does not exist' });
+        }
+        // Clear playerId from other profiles (ensures only one profile can have a given playerId)
         database.exportProfiles = database.exportProfiles.map(profile =>
             profile.playerId === normalized.playerId && profile.id !== id ? { ...profile, playerId: null } : profile
         );

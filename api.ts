@@ -111,7 +111,7 @@ function isNetworkError(error: unknown) {
         return true;
     }
     if (error instanceof Error) {
-        return /Failed to fetch|NetworkError|Load failed/i.test(error.message);
+        return /Failed to fetch|NetworkError|Load failed|ECONNREFUSED|ENOTFOUND|ECONNRESET|ETIMEDOUT|Network request failed/i.test(error.message);
     }
     return false;
 }
