@@ -79,7 +79,16 @@ const ExportManager: React.FC<ExportManagerProps> = ({ profiles, stations, genre
     const handleDownload = async (profile: ExportProfile) => {
         try {
             setActiveDownloadId(profile.id);
-            const response = await fetch(`/api/export-profiles/${profile.id}/download`);
+            const token = localStorage.getItem('access_token');
+            const headers: Record<string, string> = {};
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            const response = await fetch(`/api/export-profiles/${profile.id}/download`, {
+                headers,
+                credentials: 'include',
+            });
             if (!response.ok) {
                 throw new Error('Failed to download export profile');
             }

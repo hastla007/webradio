@@ -1162,10 +1162,15 @@ const apiLimiter = rateLimit({
 });
 
 // CORS configuration - fail if using wildcard in production
-const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
-if (process.env.NODE_ENV === 'production' && corsOrigin === '*') {
+const corsOriginRaw = process.env.CORS_ORIGIN || 'http://localhost:5173';
+if (process.env.NODE_ENV === 'production' && corsOriginRaw === '*') {
   throw new Error('❌ FATAL: Cannot use wildcard CORS origin in production! Set CORS_ORIGIN environment variable to specific domain(s).');
 }
+
+// Support comma-separated origins with whitespace trimming
+const corsOrigin = corsOriginRaw.includes(',')
+  ? corsOriginRaw.split(',').map(origin => origin.trim())
+  : corsOriginRaw;
 
 app.use(cors({
   origin: corsOrigin,
@@ -1174,7 +1179,7 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-const registerApiRoute = (method, route, handler) => {
+const registerApiRoute = (method, route, ...handlers) => {
     const normalized = route.startsWith('/') ? route : `/${route}`;
     const prefix = API_PREFIX && API_PREFIX !== '/' ? API_PREFIX : '';
     const paths = new Set([normalized]);
@@ -1185,7 +1190,7 @@ const registerApiRoute = (method, route, handler) => {
 
     for (const pathEntry of paths) {
         if (typeof app[method] === 'function') {
-            app[method](pathEntry, handler);
+            app[method](pathEntry, ...handlers);
         }
     }
 };
@@ -1304,7 +1309,7 @@ const handleFetchLogs = (req, res) => {
     res.json({ entries, cursor: nextCursor });
 };
 
-registerApiRoute('get', '/logs', handleFetchLogs);
+registerApiRoute('get', '/logs', optionalAuthenticate, handleFetchLogs);
 
 const handleStreamLogs = (req, res) => {
     const categories = parseLogCategories(req.query.type || req.query.category || req.query.categories);
@@ -1343,7 +1348,7 @@ const handleStreamLogs = (req, res) => {
     });
 };
 
-registerApiRoute('get', '/logs/stream', handleStreamLogs);
+registerApiRoute('get', '/logs/stream', optionalAuthenticate, handleStreamLogs);
 
 app.get(`${API_PREFIX}/genres`, authenticate, (req, res) => {
     res.json(database.genres);

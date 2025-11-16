@@ -3,12 +3,13 @@
  * Manages user authentication state and provides auth methods
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import type { User, AuthContextType, LoginResponse } from '../types';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+// Use VITE_API_BASE_URL to match api.ts configuration
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -28,7 +29,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } else {
       setIsLoading(false);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
 
   // Set up token refresh interval (14 minutes - before 15min expiry)
   useEffect(() => {
@@ -39,7 +41,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }, 14 * 60 * 1000); // 14 minutes
 
     return () => clearInterval(interval);
-  }, [accessToken]);
+  }, [accessToken, refreshAccessToken]);
 
   /**
    * Login with username and password
@@ -102,7 +104,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   /**
    * Refresh access token using refresh token
    */
-  const refreshAccessToken = async (): Promise<void> => {
+  const refreshAccessToken = useCallback(async (): Promise<void> => {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
         method: 'POST',
@@ -124,9 +126,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } catch (error) {
       console.error('Token refresh error:', error);
       // If refresh fails, logout
-      await logout();
+      setUser(null);
+      setAccessToken(null);
+      localStorage.removeItem('access_token');
     }
-  };
+  }, []); // No dependencies - logout inline to avoid circular dependency
 
   /**
    * Refresh authentication state (get current user)
