@@ -17,6 +17,7 @@ const { sanitizeTimeout, normalizeProtocol, testFtpConnection, uploadFiles } = r
 const authRoutes = require('./routes/auth-routes');
 const userRoutes = require('./routes/user-routes');
 const auditRoutes = require('./routes/audit-routes');
+const analyticsRoutes = require('./routes/analytics-routes');
 const { authenticate, optionalAuthenticate, requireEditor } = require('./auth/auth-middleware');
 
 const defaultData = require('../data/defaultData.json');
@@ -1283,6 +1284,7 @@ function sendSseEntry(res, entry) {
 app.use(`${API_PREFIX}/auth`, authLimiter, authRoutes);
 app.use(`${API_PREFIX}/users`, apiLimiter, userRoutes);
 app.use(`${API_PREFIX}/audit-logs`, apiLimiter, auditRoutes);
+app.use(`${API_PREFIX}/analytics`, apiLimiter, authenticate, analyticsRoutes);
 
 // Health check endpoint (no auth required)
 app.get(`${API_PREFIX}/health`, (req, res) => {

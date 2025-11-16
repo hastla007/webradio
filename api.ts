@@ -452,3 +452,51 @@ export const subscribeToLogStream = (
         },
     };
 };
+
+// ============================================================================
+// Analytics API Functions
+// ============================================================================
+
+export const fetchAnalyticsDashboard = () =>
+    request<any>('/analytics/dashboard');
+
+export const fetchStationAnalytics = (stationId: number, period: string = 'all_time') =>
+    request<any>(`/analytics/stations/${stationId}/stats?period=${period}`);
+
+export const fetchListeningTrends = (period: string = 'daily', days: number = 30) =>
+    request<any>(`/analytics/listening-trends?period=${period}&days=${days}`);
+
+export const fetchGeographicDistribution = (stationId?: number, period: string = 'all_time') => {
+    const params = new URLSearchParams();
+    if (stationId) params.set('stationId', String(stationId));
+    params.set('period', period);
+    return request<any>(`/analytics/geographic-distribution?${params.toString()}`);
+};
+
+export const fetchExportReports = () =>
+    request<any>('/analytics/export-reports');
+
+export const trackListeningEvent = (eventData: {
+    stationId: number;
+    sessionId?: string;
+    eventType: string;
+    durationMinutes?: number;
+    countryCode?: string;
+    region?: string;
+    city?: string;
+    deviceType?: string;
+    platform?: string;
+    playerAppId?: number;
+    streamQualityScore?: number;
+}) =>
+    request<any>('/analytics/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(eventData),
+    });
+
+export const exportAnalytics = (format: 'csv' | 'json', stationIds?: string) => {
+    const params = new URLSearchParams();
+    if (stationIds) params.set('stationIds', stationIds);
+    return request<any>(`/analytics/export/${format}?${params.toString()}`);
+};
