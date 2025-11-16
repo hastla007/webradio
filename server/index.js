@@ -824,7 +824,7 @@ function buildExportPayload(profile, data) {
         }
         seen.add(station.id);
         const genre = data.genres.find(g => g.id === station.genreId);
-        const normalizedGenre = station.genreId || (genre ? genre.name.toLowerCase() : null);
+        const normalizedGenre = station.genreId || (genre && genre.name ? genre.name.toLowerCase() : null);
         const section = resolveAdSection(station.tags, normalizedGenre);
         const resolvedLogo = sanitizeLogoValue(station.logoUrl) || PLACEHOLDER_LOGO;
         const exportStation = {
@@ -1305,7 +1305,7 @@ const handleFetchLogs = (req, res) => {
     res.json({ entries, cursor: nextCursor });
 };
 
-registerApiRoute('get', '/logs', optionalAuthenticate, handleFetchLogs);
+registerApiRoute('get', '/logs', apiLimiter, optionalAuthenticate, handleFetchLogs);
 
 const handleStreamLogs = (req, res) => {
     const categories = parseLogCategories(req.query.type || req.query.category || req.query.categories);
@@ -1338,13 +1338,17 @@ const handleStreamLogs = (req, res) => {
         res.write(':keep-alive\n\n');
     }, 15000);
 
-    req.on('close', () => {
+    const cleanup = () => {
         clearInterval(heartbeat);
         unsubscribe();
-    });
+    };
+
+    req.on('close', cleanup);
+    req.on('error', cleanup);
+    res.on('error', cleanup);
 };
 
-registerApiRoute('get', '/logs/stream', optionalAuthenticate, handleStreamLogs);
+registerApiRoute('get', '/logs/stream', apiLimiter, optionalAuthenticate, handleStreamLogs);
 
 app.get(`${API_PREFIX}/genres`, authenticate, (req, res) => {
     res.json(database.genres);
@@ -1377,6 +1381,12 @@ app.put(`${API_PREFIX}/genres/:id`, authenticate, requireEditor, async (req, res
     const index = database.genres.findIndex(g => g.id === id);
     if (index === -1) {
         return res.status(404).json({ error: 'Genre not found' });
+    }
+    if (!incoming.name || typeof incoming.name !== 'string' || incoming.name.trim().length === 0) {
+        return res.status(400).json({ error: 'Genre name is required and must be a non-empty string' });
+    }
+    if (incoming.name.length > 255) {
+        return res.status(400).json({ error: 'Genre name must not exceed 255 characters' });
     }
     database.genres[index] = incoming;
     database.stations = database.stations.map(station => {
@@ -1436,9 +1446,9 @@ app.post(`${API_PREFIX}/stations`, authenticate, requireEditor, async (req, res)
     if (!normalized.name || !normalized.streamUrl) {
         return res.status(400).json({ error: 'Station name and streamUrl are required' });
     }
-    const exists = database.stations.some(station => station.id === normalized.id);
-    if (exists) {
-        return res.status(409).json({ error: 'Station already exists' });
+    // Check for duplicate station by ID (only if ID was explicitly provided)
+    if (req.body.id && database.stations.some(station => station.id === req.body.id)) {
+        return res.status(409).json({ error: 'Station with this ID already exists' });
     }
     database.stations = [...database.stations, normalized];
     await saveDataToDisk(database);
@@ -1801,7 +1811,7 @@ app.get(`${API_PREFIX}/export-profiles/:id/download`, authenticate, async (req, 
         );
         if (!res.headersSent) {
             res.status(500).json({ error: 'Failed to prepare export download.' });
-        } else {
+        } else if (!res.writableEnded) {
             res.end();
         }
     }

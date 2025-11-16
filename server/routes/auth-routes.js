@@ -214,10 +214,12 @@ router.post('/login', async (req, res) => {
 /**
  * POST /api/auth/refresh
  * Refresh access token using refresh token
+ * NOTE: Only accepts refresh token from httpOnly cookie for security (CSRF protection)
  */
 router.post('/refresh', async (req, res) => {
   try {
-    const refreshToken = req.cookies.refresh_token || req.body.refresh_token;
+    // SECURITY: Only accept refresh token from cookie, not body (prevents CSRF attacks)
+    const refreshToken = req.cookies.refresh_token;
 
     if (!refreshToken) {
       return res.status(401).json({
@@ -273,7 +275,8 @@ router.post('/refresh', async (req, res) => {
  */
 router.post('/logout', authenticate, async (req, res) => {
   try {
-    const refreshToken = req.cookies.refresh_token || req.body.refresh_token;
+    // SECURITY: Only accept refresh token from cookie for consistency
+    const refreshToken = req.cookies.refresh_token;
 
     if (refreshToken) {
       const tokenHash = hashToken(refreshToken);

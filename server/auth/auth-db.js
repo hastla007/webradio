@@ -510,15 +510,7 @@ async function getAuditLogStats(options = {}) {
   const { userId, startDate, endDate } = options;
 
   let query = `
-    SELECT
-      COALESCE(COUNT(*), 0) as total_actions,
-      COALESCE(COUNT(DISTINCT user_id), 0) as unique_users,
-      COALESCE(COUNT(DISTINCT entity_type), 0) as unique_entity_types,
-      CASE
-        WHEN COUNT(*) > 0 THEN jsonb_object_agg(action, action_count)
-        ELSE '{}'::jsonb
-      END as actions_by_type
-    FROM (
+    WITH action_counts AS (
       SELECT action, COUNT(*) as action_count
       FROM audit_log
       WHERE 1=1
@@ -544,7 +536,23 @@ async function getAuditLogStats(options = {}) {
     params.push(endDate);
   }
 
-  query += ' GROUP BY action) as action_stats';
+  query += `
+      GROUP BY action
+    )
+    SELECT
+      COALESCE((SELECT COUNT(*) FROM audit_log WHERE 1=1`;
+
+  // Re-apply filters for total count
+  let filterQuery = '';
+  if (userId) filterQuery += ` AND user_id = $1`;
+  if (startDate) filterQuery += ` AND created_at >= $${userId ? 2 : 1}`;
+  if (endDate) filterQuery += ` AND created_at <= $${userId && startDate ? 3 : (userId || startDate) ? 2 : 1}`;
+
+  query += filterQuery + `), 0) as total_actions,
+      COALESCE((SELECT COUNT(DISTINCT user_id) FROM audit_log WHERE 1=1` + filterQuery + `), 0) as unique_users,
+      COALESCE((SELECT COUNT(DISTINCT entity_type) FROM audit_log WHERE 1=1` + filterQuery + `), 0) as unique_entity_types,
+      COALESCE((SELECT jsonb_object_agg(action, action_count) FROM action_counts), '{}'::jsonb) as actions_by_type
+  `;
 
   const result = await pool.query(query, params);
 
