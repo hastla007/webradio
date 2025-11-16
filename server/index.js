@@ -1808,16 +1808,21 @@ app.get(`${API_PREFIX}/export-profiles/:id/download`, authenticate, async (req, 
 });
 
 async function start() {
-    // Test database connection on startup
+    // Test database connection on startup (optional for JSON file mode)
     const { waitForDatabase } = require('./db');
     try {
-        await waitForDatabase();
-    } catch (error) {
-        logger.fatal(
-            { err: error, category: 'errors', eventType: 'database.connect' },
-            'Failed to connect to database'
+        // Quick check with only 2 retries for faster startup when DB is unavailable
+        await waitForDatabase(2, 500);
+        logger.info(
+            { category: 'system', eventType: 'database.connect' },
+            'Database connection successful'
         );
-        process.exit(1);
+    } catch (error) {
+        logger.warn(
+            { err: error, category: 'system', eventType: 'database.connect' },
+            'Database connection failed - running in JSON file mode only (authentication features disabled)'
+        );
+        // Continue without database - fall back to JSON file mode
     }
 
     database = await loadDatabase();
